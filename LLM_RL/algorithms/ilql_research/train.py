@@ -24,15 +24,8 @@ import flax.linen as nn
 
 def dump_state(
     base_model: FlaxPreTrainedModel, 
-    q_head_model: nn.Module, 
-    v_head_model: nn.Module, 
     base_train_state: TrainState, 
     target_base_params: Optional[PyTree], 
-    q1_head_train_state: TrainState, 
-    q2_head_train_state: TrainState, 
-    v_head_train_state: TrainState, 
-    q1_target_head_params: PyTree, 
-    q2_target_head_params: PyTree, 
     save_dir: str, 
     save_train_state: bool, 
     enable_save: bool, 
@@ -78,101 +71,7 @@ def dump_state(
             path=get_enabled_save_path(os.path.join(save_dir, 'target_base', 'params.msgpack'), enabled=enable_save), 
             dtype=save_dtype, 
             sharding=get_sharding_from_model(base_model, target_base_params), 
-        )
-    
-    # save q1_head
-    if enable_save:
-        create_path(os.path.join(save_dir, 'q1_head'))
-    # dump q1_head config
-    with open(get_enabled_save_path(os.path.join(save_dir, 'q1_head', 'config.json'), enabled=enable_save), 'w') as f:
-        f.write(q_head_model.config.to_json_string())
-    # dump train_state
-    if save_train_state:
-        save_pytree(
-            tree=q1_head_train_state, 
-            path=get_enabled_save_path(os.path.join(save_dir, 'q1_head', 'train_state.msgpack'), enabled=enable_save), 
-            dtype=save_dtype, 
-            sharding=get_sharding_from_model(q_head_model, q1_head_train_state), 
-        )
-    else:
-        save_pytree(
-            tree=q1_head_train_state.params, 
-            path=get_enabled_save_path(os.path.join(save_dir, 'q1_head', 'params.msgpack'), enabled=enable_save), 
-            dtype=save_dtype, 
-            sharding=get_sharding_from_model(q_head_model, q1_head_train_state.params), 
-        )
-    
-    # save q2_head
-    if enable_save:
-        create_path(os.path.join(save_dir, 'q2_head'))
-    # dump q2_head config
-    with open(get_enabled_save_path(os.path.join(save_dir, 'q2_head', 'config.json'), enabled=enable_save), 'w') as f:
-        f.write(q_head_model.config.to_json_string())
-    # dump train_state
-    if save_train_state:
-        save_pytree(
-            tree=q2_head_train_state, 
-            path=get_enabled_save_path(os.path.join(save_dir, 'q2_head', 'train_state.msgpack'), enabled=enable_save), 
-            dtype=save_dtype, 
-            sharding=get_sharding_from_model(q_head_model, q2_head_train_state), 
-        )
-    else:
-        save_pytree(
-            tree=q2_head_train_state.params, 
-            path=get_enabled_save_path(os.path.join(save_dir, 'q2_head', 'params.msgpack'), enabled=enable_save), 
-            dtype=save_dtype, 
-            sharding=get_sharding_from_model(q_head_model, q2_head_train_state.params), 
-        )
-    
-    # save v_head
-    if enable_save:
-        create_path(os.path.join(save_dir, 'v_head'))
-    # dump v_head config
-    with open(get_enabled_save_path(os.path.join(save_dir, 'v_head', 'config.json'), enabled=enable_save), 'w') as f:
-        f.write(v_head_model.config.to_json_string())
-    # dump train_state
-    if save_train_state:
-        save_pytree(
-            tree=v_head_train_state, 
-            path=get_enabled_save_path(os.path.join(save_dir, 'v_head', 'train_state.msgpack'), enabled=enable_save), 
-            dtype=save_dtype, 
-            sharding=get_sharding_from_model(v_head_model, v_head_train_state), 
-        )
-    else:
-        save_pytree(
-            tree=v_head_train_state.params, 
-            path=get_enabled_save_path(os.path.join(save_dir, 'v_head', 'params.msgpack'), enabled=enable_save), 
-            dtype=save_dtype, 
-            sharding=get_sharding_from_model(v_head_model, v_head_train_state.params), 
-        )
-    
-    # save q1_target_head
-    if enable_save:
-        create_path(os.path.join(save_dir, 'q1_target_head'))
-    # dump q1_target_head config
-    with open(get_enabled_save_path(os.path.join(save_dir, 'q1_target_head', 'config.json'), enabled=enable_save), 'w') as f:
-        f.write(q_head_model.config.to_json_string())
-    # dump params
-    save_pytree(
-        tree=q1_target_head_params, 
-        path=get_enabled_save_path(os.path.join(save_dir, 'q1_target_head', 'params.msgpack'), enabled=enable_save), 
-        dtype=save_dtype, 
-        sharding=get_sharding_from_model(q_head_model, q1_target_head_params), 
-    )
-
-    # save q2_target_head
-    if enable_save:
-        create_path(os.path.join(save_dir, 'q2_target_head'))
-    # dump q2_target_head config
-    with open(get_enabled_save_path(os.path.join(save_dir, 'q2_target_head', 'config.json'), enabled=enable_save), 'w') as f:
-        f.write(q_head_model.config.to_json_string())
-    # dump params
-    save_pytree(
-        tree=q2_target_head_params, 
-        path=get_enabled_save_path(os.path.join(save_dir, 'q2_target_head', 'params.msgpack'), enabled=enable_save), 
-        dtype=save_dtype, 
-        sharding=get_sharding_from_model(q_head_model, q2_target_head_params), 
-    )
+        )    
 
 
 def eval_loss(
@@ -275,15 +174,8 @@ def train_loop(
             create_path(curr_save_dir)
         dump_state(
             base_model=trainer.base_model, 
-            q_head_model=trainer.q_head_model, 
-            v_head_model=trainer.v_head_model, 
             base_train_state=trainer.base_train_state, 
             target_base_params=trainer.target_base_params, 
-            q1_head_train_state=trainer.q1_head_train_state, 
-            q2_head_train_state=trainer.q2_head_train_state, 
-            v_head_train_state=trainer.v_head_train_state, 
-            q1_target_head_params=trainer.q1_target_head_params, 
-            q2_target_head_params=trainer.q2_target_head_params, 
             save_dir=curr_save_dir, 
             save_train_state=save_train_state, 
             enable_save=is_main_process, 
@@ -299,21 +191,13 @@ def train_loop(
         if isinstance(inference, ValueRLInference):
             inference = inference.replace(
                 base_params=trainer.base_train_state.params, 
-                q1_head_params=trainer.q1_head_train_state.params, 
-                q2_head_params=trainer.q2_head_train_state.params, 
-                v_head_params=trainer.v_head_train_state.params, 
             )
         elif isinstance(inference, ILQLInference):
             new_value_inference = inference.value_inference.replace(
                 base_params=trainer.base_train_state.params, 
-                q1_head_params=trainer.q1_head_train_state.params, 
-                q2_head_params=trainer.q2_head_train_state.params, 
-                v_head_params=trainer.v_head_train_state.params, 
             )
             new_target_value_inference = inference.target_value_inference.replace(
                 base_params=trainer.target_base_params, 
-                q1_head_params=trainer.q1_target_head_params, 
-                q2_head_params=trainer.q2_target_head_params, 
             )
             inference = inference.replace(
                 value_inference=new_value_inference, 
