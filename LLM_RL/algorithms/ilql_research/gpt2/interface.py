@@ -147,8 +147,8 @@ class GPT2ILQLTrain(ILQLTrain):
                     p_logits = jax.lax.stop_gradient(p_logits)
                 target_p_logits = jax.lax.stop_gradient(target_p_logits)
 
-                p = jnp.take_along_axis(p_logits[:, :-1], input_ids[:, 1:][..., None], axis=2).squeeze(2)
-                target_p = jnp.take_along_axis(target_p_logits[:, :-1], input_ids[:, 1:][..., None], axis=2).squeeze(2)          
+                p = jnp.take_along_axis(jax.nn.softmax(p_logits[:, :-1]), input_ids[:, 1:][..., None], axis=2).squeeze(2)
+                target_p = jnp.take_along_axis(jax.nn.softmax(target_p_logits[:, :-1]), input_ids[:, 1:][..., None], axis=2).squeeze(2)
                 # get next token values
                 if next_token_ids is not None:
                     # just run vf on last token to save some flops
