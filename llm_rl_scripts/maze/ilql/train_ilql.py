@@ -87,7 +87,7 @@ def main(
     save_bf16: bool=True, 
 
     policy_max_input_length: int=256, 
-    policy_max_output_length: int=256, 
+    policy_max_output_length: int=8, 
     policy_do_sample: bool=True, 
     policy_num_beams: int=1, 
     policy_temperature: Optional[float]=None, 

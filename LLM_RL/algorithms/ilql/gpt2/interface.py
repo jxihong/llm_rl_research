@@ -14,6 +14,7 @@ from jax.sharding import PartitionSpec as PS
 import jax.numpy as jnp
 import optax
 from LLM_RL.algorithms.value_rl_base.gpt2.interface import GPT2ValueRLInference
+from IPython import embed
 
 class GPT2ILQLTrain(ILQLTrain):
     @classmethod
@@ -240,8 +241,29 @@ class GPT2ILQLTrain(ILQLTrain):
 
                 q1 = jnp.take_along_axis(q1_head_output[:, :-1], input_ids[:, 1:][..., None], axis=2).squeeze(2)
                 q2 = jnp.take_along_axis(q2_head_output[:, :-1], input_ids[:, 1:][..., None], axis=2).squeeze(2)
-                v = v_head_output[:, :-1].squeeze(2)
+                # v = v_head_output[:, :-1].squeeze(2)
                 v_full = v_head_output.squeeze(2)
+                v = v_head_output[:, 1:].squeeze(2)
+
+                masked_idxs = (
+                    should_take_action.astype(jnp.int32) * jnp.arange(0, should_take_action.shape[1])[None, ...] +
+                    jnp.flip(should_take_action, axis=1).astype(jnp.int32) * (should_take_action.shape[1] + 1)
+                )
+                # print(masked_idxs.shape)
+                next_action_idxs = jax.lax.cummin(masked_idxs[:, ::-1], axis=1)[:, ::-1]
+                # print(next_action_idxs.shape)
+                last_action_idxs = (should_take_action.shape[1]-1)-jnp.argmax(jnp.flip(should_take_action, axis=1).astype(jnp.int32), axis=1)+1
+                # print(last_action_idxs.shape)
+                next_action_idxs = jnp.minimum(next_action_idxs.shape[0], last_action_idxs[..., None] * jnp.ones_like(next_action_idxs))
+                # print(next_action_idxs.shape)
+                
+                v = jnp.take_along_axis(v, next_action_idxs, axis=1)
+                v = jnp.concatenate([v_full[:, :1], v], axis=1)
+                # print(v.shape)
+                # embed()
+                # assert v.shape == (128, 128)
+                # v_full = v_full[jnp.arange(0, should_take_action.shape[0], dtype=jnp.int32), next_action_idxs]
+
                 target_q1 = jnp.take_along_axis(target_q1_head_output[:, :-1], input_ids[:, 1:][..., None], axis=2).squeeze(2)
                 target_q2 = jnp.take_along_axis(target_q2_head_output[:, :-1], input_ids[:, 1:][..., None], axis=2).squeeze(2)
 
@@ -268,14 +290,16 @@ class GPT2ILQLTrain(ILQLTrain):
                     last_action_idxs = (should_take_action.shape[1]-1)-jnp.argmax(jnp.flip(should_take_action, axis=1).astype(jnp.int32), axis=1)+1
                     last_token_idxs = (attention_mask.shape[1]-1)-jnp.argmax(jnp.flip(attention_mask, axis=1).astype(jnp.int32), axis=1)
                     final_state_idxs = ((1 - dones) * last_action_idxs + dones * last_token_idxs).astype(jnp.int32)
-                    v_final = v_full[jnp.arange(0, should_take_action.shape[0], dtype=jnp.int32), final_state_idxs]
+                    v_final = v[jnp.arange(0, should_take_action.shape[0], dtype=jnp.int32), final_state_idxs]
                     v_final = v_final * (1 - dones)
+                    
                 v_final = jax.lax.stop_gradient(v_final)
+                assert v_final.shape == (128,)
 
                 loss, info = loss_fn(
                     q1, 
                     q2, 
-                    v, 
+                    v[:, :-1], 
                     v_final, 
                     target_q1, 
                     target_q2, 

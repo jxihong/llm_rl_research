@@ -52,7 +52,7 @@ def main(
     epochs: int=1, 
     max_steps: Optional[int]=None, 
     
-    lr: float=1e-5, 
+    lr: float=3e-5, 
     weight_decay: float=0.0, 
 
     train_bsize: int=32, 
@@ -87,17 +87,17 @@ def main(
     policy_top_p: Optional[float]=None, 
     policy_top_k: Optional[int]=None, 
 
-    policy_bsize: int=32, 
-    policy_n_rollouts: int=32, 
+    policy_bsize: int=2, 
+    policy_n_rollouts: int=4, 
 
     eval_loss_bsize: int=32, 
-    eval_loss_batches: Optional[int]=None, 
+    eval_loss_batches: Optional[int]=1, 
 
     force_pad_embeddings: bool=False, 
 
     should_restore_loop_state: bool=False, 
 
-    beta: float=16.0, 
+    beta: float=32.0, 
 
     detach_q1: bool=False, 
     detach_q2: bool=False, 
@@ -312,7 +312,8 @@ def main(
 
     train = GPT2ILQLTrain.load_train(
         base_train_state=base_train_state, 
-        target_base_params=target_base_params, 
+        # target_base_params=target_base_params, 
+        target_base_params=None,
         q1_head_train_state=q1_head_train_state, 
         q2_head_train_state=q2_head_train_state, 
         v_head_train_state=v_head_train_state, 
@@ -347,7 +348,8 @@ def main(
         ), 
         target_value_inference=GPT2ValueRLInference.load_inference(
             pi_beta_params=pi_beta_params, 
-            base_params=target_base_params, 
+            # base_params=target_base_params, 
+            base_params=base_train_state.params,
             q1_head_params=q1_target_head_params, 
             q2_head_params=q2_target_head_params, 
             v_head_params=None, 
@@ -360,6 +362,7 @@ def main(
             dp_shard_logits=True, 
         ), 
         loss_fn=loss_fn, 
+        use_target_base_for_loss=False,
     )
     
     vocab = Vocabulary.from_file(
@@ -379,6 +382,7 @@ def main(
     policy_prng = jax.random.PRNGKey(0)
     def evaluate(inference: GPT2ILQLInference):
         nonlocal policy_prng
+        print("Evaluating...")
         policy_prng, new_key = jax.random.split(policy_prng)
         policy = GPT2ValuePolicy(
             inference=inference.value_inference, 
@@ -408,6 +412,7 @@ def main(
             bsize=eval_loss_bsize, 
             eval_batches=eval_loss_batches, 
         )
+        print(loss_results)
 
         interaction_raw_results, interaction_summary_results = text_env_eval(
             env=env, 
@@ -415,6 +420,8 @@ def main(
             n_rollouts=policy_n_rollouts, 
             bsize=policy_bsize, 
         )
+
+        print(len(interaction_raw_results))
 
         for item in interaction_raw_results:
             print('='*25)
