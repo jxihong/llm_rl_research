@@ -65,15 +65,6 @@ def ilql_loss(
     # should be the same number of vns as qv, so we can clip the extra padding to match shape
     vns_query_indicators = vns_query_indicators[:qv_query_indicators.shape[0], :]
     
-    # extract selected values
-    # q1sa_selected = (qv_query_indicators * q1sa_flat).sum(axis=1)
-    # q2sa_selected = (qv_query_indicators * q2sa_flat).sum(axis=1)
-    # v_selected = (qv_query_indicators * v_flat).sum(axis=1)
-    # target_q1sa_selected = (qv_query_indicators * target_q1sa_flat).sum(axis=1)
-    # target_q2sa_selected = (qv_query_indicators * target_q2sa_flat).sum(axis=1)
-    # vns_selected = (vns_query_indicators * vns_flat).sum(axis=1)
-    # rs_selected = (qv_query_indicators * rewards.reshape(-1)).sum(axis=1)
-
     # get masks for selected values
     sa_mask = (qv_query_indicators.sum(axis=1) > 0).astype(jnp.float32)
     ns_mask = (vns_query_indicators.sum(axis=1) > 0).astype(jnp.float32)

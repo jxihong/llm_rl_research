@@ -19,19 +19,19 @@ from LLM_RL.environment import BatchedTextPolicy
 
 class ValueRLForwardOutput(NamedTuple):
     base_raw_output: FlaxCausalLMOutput
-    q1: jax.Array
+    q1: Optional[jax.Array]
     q2: Optional[jax.Array]
     v: Optional[jax.Array]
 
 class ValueRLInference(struct.PyTreeNode):
     pi_beta_params: Optional[PyTree]
     base_params: PyTree
-    q1_head_params: PyTree
+    q1_head_params: Optional[PyTree]
     q2_head_params: Optional[PyTree]
     v_head_params: Optional[PyTree]
     pi_beta_model: Optional[FlaxPreTrainedModel] = struct.field(pytree_node=False)
     base_model: FlaxPreTrainedModel = struct.field(pytree_node=False)
-    q_head_model: nn.Module = struct.field(pytree_node=False)
+    q_head_model: Optional[nn.Module] = struct.field(pytree_node=False)
     v_head_model: Optional[nn.Module] = struct.field(pytree_node=False)
     tokenizer: PreTrainedTokenizerBase = struct.field(pytree_node=False)
     _generate: Callable = struct.field(pytree_node=False)

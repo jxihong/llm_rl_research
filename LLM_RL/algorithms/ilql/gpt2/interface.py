@@ -264,6 +264,15 @@ class GPT2ILQLTrain(ILQLTrain):
                 # assert v.shape == (128, 128)
                 # v_full = v_full[jnp.arange(0, should_take_action.shape[0], dtype=jnp.int32), next_action_idxs]
 
+
+                masked_idxs = (
+                    should_take_action.astype(jnp.int32) * jnp.arange(0, should_take_action.shape[1])[None, ...] +
+                    jnp.flip(should_take_action, axis=1).astype(jnp.int32) * should_take_action.shape[1]
+                )
+                next_action_idxs = jax.lax.cummin(masked_idxs[:, ::-1], axis=-1)[:, ::-1]
+                next_action_idxs = jnp.minimum(next_action_idxs, should_take_action.shape[1] - 1)
+                v_full = v_full[jnp.arange(0, should_take_action.shape[0], dtype=jnp.int32), next_action_idxs]
+
                 target_q1 = jnp.take_along_axis(target_q1_head_output[:, :-1], input_ids[:, 1:][..., None], axis=2).squeeze(2)
                 target_q2 = jnp.take_along_axis(target_q2_head_output[:, :-1], input_ids[:, 1:][..., None], axis=2).squeeze(2)
 
