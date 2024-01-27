@@ -240,8 +240,16 @@ class GPT2ILQLTrain(ILQLTrain):
 
                 q1 = jnp.take_along_axis(q1_head_output[:, :-1], input_ids[:, 1:][..., None], axis=2).squeeze(2)
                 q2 = jnp.take_along_axis(q2_head_output[:, :-1], input_ids[:, 1:][..., None], axis=2).squeeze(2)
-                v = v_head_output[:, :-1].squeeze(2)
                 v_full = v_head_output.squeeze(2)
+
+                masked_idxs = (
+                    should_take_action.astype(jnp.int32) * jnp.arange(0, should_take_action.shape[1])[None, ...] +
+                    jnp.flip(should_take_action, axis=1).astype(jnp.int32) * should_take_action.shape[1]
+                )
+                next_action_idxs = jax.lax.cummin(masked_idxs[:, ::-1], axis=-1)[:, ::-1]
+                next_action_idxs = jnp.minimum(next_action_idxs, should_take_action.shape[1] - 1)
+                v_full = v_full[jnp.arange(0, should_take_action.shape[0], dtype=jnp.int32), next_action_idxs]
+
                 target_q1 = jnp.take_along_axis(target_q1_head_output[:, :-1], input_ids[:, 1:][..., None], axis=2).squeeze(2)
                 target_q2 = jnp.take_along_axis(target_q2_head_output[:, :-1], input_ids[:, 1:][..., None], axis=2).squeeze(2)
 
@@ -270,13 +278,13 @@ class GPT2ILQLTrain(ILQLTrain):
                     final_state_idxs = ((1 - dones) * last_action_idxs + dones * last_token_idxs).astype(jnp.int32)
                     v_final = v_full[jnp.arange(0, should_take_action.shape[0], dtype=jnp.int32), final_state_idxs]
                     v_final = v_final * (1 - dones)
-                v_final = jax.lax.stop_gradient(v_final)
+                v_full.at[jnp.arange(0, should_take_action.shape[0]), final_state_idxs:].set(v_final)
 
                 loss, info = loss_fn(
                     q1, 
                     q2, 
-                    v, 
-                    v_final, 
+                    v_full[:, :-1], 
+                    v_full[:, -1], 
                     target_q1, 
                     target_q2, 
                     q1_logits, 
