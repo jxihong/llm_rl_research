@@ -79,6 +79,16 @@ def loss_fn_mask(
             (jax.nn.softmax(pi_beta_logits) > 1e-4).astype(jnp.float32) *  # Clipping based on pi_beta
             jnp.exp(jax.nn.log_softmax(target_logits) - jax.nn.log_softmax(pi_beta_logits)), axis=-1)
     )
+    # Skip over target values computed over environment steps
+    should_take_action = input_training_mask[:, 1:]
+    masked_idxs = (
+        should_take_action.astype(jnp.int32) * jnp.arange(0, should_take_action.shape[1])[None, ...] +
+        jnp.flip(should_take_action, axis=1).astype(jnp.int32) * should_take_action.shape[1]
+    )
+    next_action_idxs = jax.lax.cummin(masked_idxs[:, ::-1], axis=-1)[:, ::-1]
+    next_action_idxs = jnp.minimum(next_action_idxs, should_take_action.shape[1] - 1)
+    targets = jnp.take_along_axis(targets, next_action_idxs, axis=1)
+
     # Compute smooth distribution
     vocab_size = logits.shape[-1]
     target_ids_one_hot = jax.nn.one_hot(target_ids, num_classes=vocab_size, dtype=jnp.float32, axis=-1)
