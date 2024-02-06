@@ -50,7 +50,8 @@ def ilql_loss(
     
     q1sa_flat, q2sa_flat, v_flat = q1.reshape(-1), q2.reshape(-1), v.reshape(-1)
     target_q1sa_flat, target_q2sa_flat = target_q1.reshape(-1), target_q2.reshape(-1)
-    vns_flat = jnp.concatenate((v, v_final[..., None]), axis=1).reshape(-1)
+    # vns_flat = jnp.concatenate((v, v_final[..., None]), axis=1).reshape(-1)
+    vns_flat = jnp.concatenate((v[:, 1:], v_final[..., None]), axis=1).reshape(-1) 
 
     qv_query_indicators = get_query_indicators(should_take_action.reshape(-1))
 
@@ -76,7 +77,7 @@ def ilql_loss(
     target_q_flat = jnp.minimum(target_q1sa_flat, target_q2sa_flat)
     expectile_indicator = (target_q_flat >= v_flat).astype(jnp.float32)
     expectile_weights = expectile_indicator * tau + (1 - expectile_indicator) * (1 - tau)
-    v_loss = (optax.l2_loss(v_flat, jax.lax.stop_gradient(target_q_flat)) * jax.lax.stop_gradient(expectile_weights)).sum() / n
+    v_loss = (optax.l2_loss(v_flat, jax.lax.stop_gradient(target_q_flat)) * jax.lax.stop_gradient(expectile_weights) * sa_mask).sum() / n
 
     # compute cql loss on both q heads
     q1_cql_loss = optax.softmax_cross_entropy_with_integer_labels(q1_logits, token_ids)
