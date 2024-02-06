@@ -243,31 +243,7 @@ class GPT2ILQLTrain(ILQLTrain):
                 q2 = jnp.take_along_axis(q2_head_output[:, :-1], input_ids[:, 1:][..., None], axis=2).squeeze(2)
                 # v = v_head_output[:, :-1].squeeze(2)
                 v_full = v_head_output.squeeze(2)
-<<<<<<< Updated upstream
-                v = v_head_output[:, 1:].squeeze(2)
-
-                masked_idxs = (
-                    should_take_action.astype(jnp.int32) * jnp.arange(0, should_take_action.shape[1])[None, ...] +
-                    jnp.flip(should_take_action, axis=1).astype(jnp.int32) * (should_take_action.shape[1] + 1)
-                )
-                # print(masked_idxs.shape)
-                next_action_idxs = jax.lax.cummin(masked_idxs[:, ::-1], axis=1)[:, ::-1]
-                # print(next_action_idxs.shape)
-                last_action_idxs = (should_take_action.shape[1]-1)-jnp.argmax(jnp.flip(should_take_action, axis=1).astype(jnp.int32), axis=1)+1
-                # print(last_action_idxs.shape)
-                next_action_idxs = jnp.minimum(next_action_idxs.shape[0], last_action_idxs[..., None] * jnp.ones_like(next_action_idxs))
-                # print(next_action_idxs.shape)
-                
-                v = jnp.take_along_axis(v, next_action_idxs, axis=1)
-                v = jnp.concatenate([v_full[:, :1], v], axis=1)
-                # print(v.shape)
-                # embed()
-                # assert v.shape == (128, 128)
-                # v_full = v_full[jnp.arange(0, should_take_action.shape[0], dtype=jnp.int32), next_action_idxs]
-
-=======
                 v_target = v_full[:, 1:]
->>>>>>> Stashed changes
 
                 masked_idxs = (
                     should_take_action.astype(jnp.int32) * jnp.arange(0, should_take_action.shape[1])[None, ...] +
@@ -303,26 +279,14 @@ class GPT2ILQLTrain(ILQLTrain):
                     last_action_idxs = (should_take_action.shape[1]-1)-jnp.argmax(jnp.flip(should_take_action, axis=1).astype(jnp.int32), axis=1)+1
                     last_token_idxs = (attention_mask.shape[1]-1)-jnp.argmax(jnp.flip(attention_mask, axis=1).astype(jnp.int32), axis=1)
                     final_state_idxs = ((1 - dones) * last_action_idxs + dones * last_token_idxs).astype(jnp.int32)
-<<<<<<< Updated upstream
-                    v_final = v[jnp.arange(0, should_take_action.shape[0], dtype=jnp.int32), final_state_idxs]
-                    v_final = v_final * (1 - dones)
-                    
-                v_final = jax.lax.stop_gradient(v_final)
-                assert v_final.shape == (128,)
-=======
                     v_final = v_target[jnp.arange(0, should_take_action.shape[0], dtype=jnp.int32), final_state_idxs]
                     v_final = v_final * (1 - dones)
                 v_target.at[jnp.arange(0, should_take_action.shape[0]), final_state_idxs:].set(v_final)
->>>>>>> Stashed changes
 
                 loss, info = loss_fn(
                     q1, 
                     q2, 
-<<<<<<< Updated upstream
-                    v[:, :-1], 
-=======
-                    jnp.concatenate([v_full[:, :1], v_target[:, :-1]], axis=1), 
->>>>>>> Stashed changes
+                    jnp.concatenate([v_full[:, :1], v_target[:, :-1]], axis=1),
                     v_final, 
                     target_q1, 
                     target_q2, 
@@ -620,11 +584,20 @@ class GPT2ILQLInference(ILQLInference):
             )
 
             # process outputs
-
             q1 = jnp.take_along_axis(q1_head_output[:, :-1], input_ids[:, 1:][..., None], axis=2).squeeze(2)
             q2 = jnp.take_along_axis(q2_head_output[:, :-1], input_ids[:, 1:][..., None], axis=2).squeeze(2)
-            v = v_head_output[:, :-1].squeeze(2)
+            # v = v_head_output[:, :-1].squeeze(2)
             v_full = v_head_output.squeeze(2)
+            v_target = v_full[:, 1:]
+
+            masked_idxs = (
+                should_take_action.astype(jnp.int32) * jnp.arange(0, should_take_action.shape[1])[None, ...] +
+                jnp.flip(should_take_action, axis=1).astype(jnp.int32) * should_take_action.shape[1]
+            )
+            next_action_idxs = jax.lax.cummin(masked_idxs[:, ::-1], axis=-1)[:, ::-1]
+            next_action_idxs = jnp.minimum(next_action_idxs, should_take_action.shape[1] - 1)
+            v_target = jnp.take_along_axis(v_target, next_action_idxs, axis=1)
+
             target_q1 = jnp.take_along_axis(target_q1_head_output[:, :-1], input_ids[:, 1:][..., None], axis=2).squeeze(2)
             target_q2 = jnp.take_along_axis(target_q2_head_output[:, :-1], input_ids[:, 1:][..., None], axis=2).squeeze(2)
 
@@ -640,7 +613,7 @@ class GPT2ILQLInference(ILQLInference):
                 new_key = None
                 if prng_key is not None:
                     prng_key, new_key = jax.random.split(prng_key)
-                next_token_v_head_output = value_inference.v_head_model.apply(
+                next_token_v_head_output = v_head_model.apply(
                     {'params': v_head_params}, 
                     final_next_token_h, 
                     train=train, 
@@ -651,13 +624,14 @@ class GPT2ILQLInference(ILQLInference):
                 last_action_idxs = (should_take_action.shape[1]-1)-jnp.argmax(jnp.flip(should_take_action, axis=1).astype(jnp.int32), axis=1)+1
                 last_token_idxs = (attention_mask.shape[1]-1)-jnp.argmax(jnp.flip(attention_mask, axis=1).astype(jnp.int32), axis=1)
                 final_state_idxs = ((1 - dones) * last_action_idxs + dones * last_token_idxs).astype(jnp.int32)
-                v_final = v_full[jnp.arange(0, should_take_action.shape[0], dtype=jnp.int32), final_state_idxs]
+                v_final = v_target[jnp.arange(0, should_take_action.shape[0], dtype=jnp.int32), final_state_idxs]
                 v_final = v_final * (1 - dones)
+            v_target.at[jnp.arange(0, should_take_action.shape[0]), final_state_idxs:].set(v_final)
 
             loss, info = loss_fn(
                 q1, 
                 q2, 
-                v, 
+                jnp.concatenate([v_full[:, :1], v_target[:, :-1]], axis=1),
                 v_final, 
                 target_q1, 
                 target_q2, 
@@ -667,9 +641,7 @@ class GPT2ILQLInference(ILQLInference):
                 attention_mask[:, 1:], 
                 should_take_action, 
                 rewards, 
-            )
-            
-            return loss, info
+            )                
 
         return cls(
             value_inference=value_inference, 
