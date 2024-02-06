@@ -19,142 +19,13 @@ from jax.sharding import NamedSharding
 from jax.experimental.pjit import pjit
 
 
-class GPT2Train(Train):
-    @classmethod
-    def load_train(
-        cls, 
-        train_state: TrainState,
-        target_params: Optional[PyTree]
-        pi_beta_params: PyTree
-        model: FlaxPreTrainedModel, 
-        tokenizer: PreTrainedTokenizerBase, 
-        loss_fn: Callable=loss_fn,
-        polyak_alpha: float, 
-        hard_update_every: Optional[int], 
-    ) -> GPT2Train:
-        mesh = model.config.mesh
-        assert mesh is not None
-        train_state_partition_spec = match_partition_rules(model.config.get_partition_rules(), train_state)
-        target_params_partition_spec = PS() if target_base_params is None else match_partition_rules(model.config.get_partition_rules(), target_params)
-        pi_beta_params_partition_spec = match_partition_rules(model.config.get_partition_rules(), pi_beta_params)
-        
-        @partial(
-            pjit, 
-            donate_argnums=(0, 1, 2), 
-            static_argnames=('train',), 
-            in_shardings=(
-                jax.tree_util.tree_map(lambda ps: NamedSharding(mesh, ps), train_state_partition_spec), 
-                jax.tree_util.tree_map(lambda ps: NamedSharding(mesh, ps), target_params_partition_spec), 
-                jax.tree_util.tree_map(lambda ps: NamedSharding(mesh, ps), pi_beta_params_partition_spec), 
-                NamedSharding(mesh, PS()), 
-                NamedSharding(mesh, PS()), 
-                NamedSharding(mesh, PS()), 
-                NamedSharding(mesh, PS()), 
-                NamedSharding(mesh, PS()), 
-            ), 
-            out_shardings=(
-                jax.tree_util.tree_map(lambda ps: NamedSharding(mesh, ps), train_state_partition_spec), 
-                jax.tree_util.tree_map(lambda ps: NamedSharding(mesh, ps), target_params_partition_spec), 
-                jax.tree_util.tree_map(lambda ps: NamedSharding(mesh, ps), pi_beta_params_partition_spec), 
-                NamedSharding(mesh, PS()), 
-                NamedSharding(mesh, PS()), 
-            ), 
-        )
-        def _step(
-            train_state: TrainState,
-            target_params: Optional[PyTree],
-            pi_beta_params: PyTree,
-                
-            input_ids: jax.Array, 
-            input_attention_mask: jax.Array, 
-            input_position_ids: jax.Array, 
-            target_ids: jax.Array, 
-            target_attention_mask: jax.Array, 
-            target_position_ids: jax.Array,
-            rewards: jax.Array,
-            gamma: Union[float, jax.Array],
-
-            prng_key: Optional[jax.random.PRNGKeyArray], 
-            train: bool=True, 
-        ) -> Tuple[TrainState, jax.Array, PyTree]:
-            # data parallel shard inputs
-            input_ids = with_named_sharding_constraint(input_ids, mesh, PS(("dp", "fsdp"), None))
-            input_attention_mask = with_named_sharding_constraint(input_attention_mask, mesh, PS(("dp", "fsdp"), None))
-            input_position_ids = with_named_sharding_constraint(input_position_ids, mesh, PS(("dp", "fsdp"), None))
-            target_ids = with_named_sharding_constraint(target_ids, mesh, PS(("dp", "fsdp"), None))
-            target_attention_mask = with_named_sharding_constraint(target_attention_mask, mesh, PS(("dp", "fsdp"), None))
-            target_position_ids = with_named_sharding_constraint(target_position_ids, mesh, PS(("dp", "fsdp"), None))
-            rewards = with_named_sharding_constraint(rewards, mesh, PS(('dp', 'fsdp'), None))
-            if isinstance(gamma, jax.Array):
-                gamma = with_named_sharding_constraint(gamma, mesh, PS(('dp', 'fsdp'), None))
-
-            # define loss function
-            def grad_loss(params: PyTree):
-                loss, info = loss_fn(
-                    model, 
-                    params,
-                    target_params,
-                    pi_beta_params,
-                    input_ids, 
-                    input_attention_mask, 
-                    input_position_ids, 
-                    target_ids, 
-                    target_attention_mask, 
-                    target_position_ids,
-                    rewards,
-                    gamma,
-                    prng_key, 
-                    train, 
-                )
-                return loss, info
-            train_state = train_state
-            # take loss
-            (loss, info), grads = jax.value_and_grad(grad_loss, has_aux=True)(train_state.params)
-            # assert shard gradients
-            grads = jax.tree_util.tree_map(lambda x, ps: with_named_sharding_constraint(x, mesh, ps), grads, train_state_partition_spec.params)
-            # update params and optim state
-            train_state = train_state.apply_gradients(grads=grads)
-
-            # handle target network updates
-            def update_targets(params: PyTree, base_params: PyTree, steps: jnp.ndarray) -> PyTree:
-                base_params = optax.incremental_update(params, base_params, polyak_alpha)
-                if hard_update_every is not None:
-                    base_params = optax.periodic_update(params, base_params, steps, hard_update_every)
-                return base_params
-            
-            def mid_targets(params: PyTree, base_params: PyTree, steps: jnp.ndarray) -> PyTree:
-                return base_params
-
-            def update_cond(opt_state: PyTree) -> bool:
-                if hasattr(opt_state, 'mini_step'):
-                    return opt_state.mini_step == 0
-                return True
-            
-            if target_params is not None:
-                target_params = jax.lax.cond(
-                    update_cond(base_train_state.opt_state), 
-                    update_targets, 
-                    mid_targets, 
-                    train_state.params, 
-                    target_params, 
-                    train_state.step, 
-                )
-            return train_state, target_params, pi_beta_params, loss, info
-        
-        return cls(
-            train_state=train_state, 
-            model=model, 
-            tokenizer=tokenizer, 
-            _step=_step, 
-        )
-
 class GPT2TrainMask(TrainMask):
     @classmethod
     def load_train(
         cls,
         train_state: TrainState,
         target_params: Optional[PyTree]
-        pi_beta_params: PyTree
+        pi_beta_train_state: TrainState,
         model: FlaxPreTrainedModel, 
         tokenizer: PreTrainedTokenizerBase, 
         loss_fn: Callable=loss_fn_mask,
@@ -165,7 +36,7 @@ class GPT2TrainMask(TrainMask):
         assert mesh is not None
         train_state_partition_spec = match_partition_rules(model.config.get_partition_rules(), train_state)
         target_params_partition_spec = PS() if target_base_params is None else match_partition_rules(model.config.get_partition_rules(), target_params)
-        pi_beta_params_partition_spec = match_partition_rules(model.config.get_partition_rules(), pi_beta_params)
+        pi_beta_train_state_partition_spec = match_partition_rules(model.config.get_partition_rules(), pi_beta_train_state.params)
         
         @partial(
             pjit, 
@@ -174,7 +45,7 @@ class GPT2TrainMask(TrainMask):
             in_shardings=(
                 jax.tree_util.tree_map(lambda ps: NamedSharding(mesh, ps), train_state_partition_spec), 
                 jax.tree_util.tree_map(lambda ps: NamedSharding(mesh, ps), target_params_partition_spec), 
-                jax.tree_util.tree_map(lambda ps: NamedSharding(mesh, ps), pi_beta_params_partition_spec), 
+                jax.tree_util.tree_map(lambda ps: NamedSharding(mesh, ps), pi_beta_train_state_partition_spec), 
                 NamedSharding(mesh, PS()), 
                 NamedSharding(mesh, PS()), 
                 NamedSharding(mesh, PS()), 
@@ -184,17 +55,21 @@ class GPT2TrainMask(TrainMask):
             out_shardings=(
                 jax.tree_util.tree_map(lambda ps: NamedSharding(mesh, ps), train_state_partition_spec), 
                 jax.tree_util.tree_map(lambda ps: NamedSharding(mesh, ps), target_params_partition_spec), 
-                jax.tree_util.tree_map(lambda ps: NamedSharding(mesh, ps), pi_beta_params_partition_spec), 
+                jax.tree_util.tree_map(lambda ps: NamedSharding(mesh, ps), pi_beta_train_state_partition_spec), 
                 NamedSharding(mesh, PS()), 
                 NamedSharding(mesh, PS()), 
             ), 
         )
         def _step(
-            train_state: TrainState, 
+            train_state: TrainState,
+            target_params: Optional[PyTree],
+            pi_beta_train_state: TrainState,
             input_ids: jax.Array, 
             input_attention_mask: jax.Array, 
             input_position_ids: jax.Array, 
-            input_training_mask: jax.Array, 
+            input_training_mask: jax.Array,
+            rewards: jax.Array,
+            gammas: jax.Array,
             prng_key: Optional[jax.random.PRNGKeyArray], 
             train: bool=True, 
         ) -> Tuple[TrainState, jax.Array, PyTree]:
@@ -204,8 +79,7 @@ class GPT2TrainMask(TrainMask):
             input_position_ids = with_named_sharding_constraint(input_position_ids, mesh, PS(("dp", "fsdp"), None))
             input_training_mask = with_named_sharding_constraint(input_training_mask, mesh, PS(("dp", "fsdp"), None))
             rewards = with_named_sharding_constraint(rewards, mesh, PS(('dp', 'fsdp'), None))
-            if isinstance(gamma, jax.Array):
-                gamma = with_named_sharding_constraint(gamma, mesh, PS(('dp', 'fsdp'), None))
+            gammas = with_named_sharding_constraint(gammas, mesh, PS(('dp', 'fsdp'), None))
 
             # define loss function
             def grad_loss(params: PyTree):
@@ -219,18 +93,28 @@ class GPT2TrainMask(TrainMask):
                     input_position_ids, 
                     input_training_mask,
                     rewards,
-                    gamma,
+                    gammas,
                     prng_key, 
                     train, 
                 )
                 return loss, info
-            train_state = train_state
+
             # take loss
-            (loss, info), grads = jax.value_and_grad(grad_loss, has_aux=True)(train_state.params)
+            (loss, info), (grads, pi_beta_grads) = jax.value_and_grad(grad_loss, has_aux=True)(
+                train_state.params,
+                pi_beta_train_state.params,
+                prng_key
+            )
             # assert shard gradients
-            grads = jax.tree_util.tree_map(lambda x, ps: with_named_sharding_constraint(x, mesh, ps), grads, train_state_partition_spec.params)
+            grads = jax.tree_util.tree_map(
+                lambda x, ps: with_named_sharding_constraint(x, mesh, ps), grads,
+                train_state_partition_spec.params)
+            pi_beta_grads = jax.tree_util.tree_map(
+                lambda x, ps: with_named_sharding_constraint(x, mesh, ps), pi_beta_grads,
+                pi_beta_train_state_partition_spec.params)
             # update params and optim state
             train_state = train_state.apply_gradients(grads=grads)
+            pi_beta_train_state = pi_beta_train_state.apply_gradients(grads=pi_beta_grads)
 
             # handle target network updates
             def update_targets(params: PyTree, base_params: PyTree, steps: jnp.ndarray) -> PyTree:
@@ -249,7 +133,7 @@ class GPT2TrainMask(TrainMask):
             
             if target_params is not None:
                 target_params = jax.lax.cond(
-                    update_cond(base_train_state.opt_state), 
+                    update_cond(train_state.opt_state), 
                     update_targets, 
                     mid_targets, 
                     train_state.params, 
@@ -259,25 +143,33 @@ class GPT2TrainMask(TrainMask):
             return train_state, target_params, pi_beta_params, loss, info
         
         return cls(
-            train_state=train_state, 
+            train_state=train_state,
+            target_params=target_params,
+            pi_beta_train_state=pi_beta_train_state,
             model=model, 
             tokenizer=tokenizer, 
             _step=_step, 
         )
 
-class GPT2Inference(Inference):
+
+class GPT2InferenceMask(InferenceMask):
     @classmethod
     def load_inference(
         cls, 
-        params: PyTree, 
+        params: PyTree,
+        target_params: Optional[PyTree],
+        pi_beta_params: PyTree,
         model: FlaxPreTrainedModel, 
         tokenizer: PreTrainedTokenizerBase, 
-        loss_fn: Optional[Callable]=loss_fn, 
+        loss_fn: Optional[Callable]=loss_fn_mask, 
         dp_shard_logits: bool=True, 
-    ) -> GPT2Inference:
+    ) -> GPT2InferenceMask:
         mesh = model.config.mesh
         assert mesh is not None
         params_partition_spec = match_partition_rules(model.config.get_partition_rules(), params)
+        target_params_partition_spec = PS() if target_base_params is None else match_partition_rules(model.config.get_partition_rules(), target_params)
+        pi_beta_params_partition_spec = match_partition_rules(model.config.get_partition_rules(), pi_beta_params)
+
 
         @partial(
             pjit, 
@@ -369,12 +261,14 @@ class GPT2Inference(Inference):
             if dp_shard_logits:
                 output = output.replace(logits=with_named_sharding_constraint(output.logits, mesh, PS(("dp", "fsdp"), None, None)))
             return output
-        
+
         @partial(
             pjit, 
             static_argnames=('train',), 
             in_shardings=(
                 jax.tree_util.tree_map(lambda ps: NamedSharding(mesh, ps), params_partition_spec), 
+                jax.tree_util.tree_map(lambda ps: NamedSharding(mesh, ps), target_params_partition_spec), 
+                jax.tree_util.tree_map(lambda ps: NamedSharding(mesh, ps), pi_beta_params_partition_spec), 
                 NamedSharding(mesh, PS()), 
                 NamedSharding(mesh, PS()), 
                 NamedSharding(mesh, PS()), 
@@ -389,86 +283,15 @@ class GPT2Inference(Inference):
             ), 
         )
         def _eval_loss(
-            params: PyTree, 
+            params: PyTree,
+            target_params: Optional[PyTree],
+            pi_beta_params: PyTree,
             input_ids: jax.Array, 
             input_attention_mask: jax.Array, 
             input_position_ids: jax.Array, 
-            target_ids: jax.Array, 
-            target_attention_mask: jax.Array, 
-            target_position_ids: jax.Array, 
-            prng_key: Optional[jax.random.PRNGKeyArray], 
-            train: bool=False, 
-        ) -> Tuple[jax.Array, PyTree]:
-            assert loss_fn is not None, "loss_fn must be set to use eval_loss"
-            # data parallel shard inputs
-            input_ids = with_named_sharding_constraint(input_ids, mesh, PS(("dp", "fsdp"), None))
-            input_attention_mask = with_named_sharding_constraint(input_attention_mask, mesh, PS(("dp", "fsdp"), None))
-            input_position_ids = with_named_sharding_constraint(input_position_ids, mesh, PS(("dp", "fsdp"), None))
-            target_ids = with_named_sharding_constraint(target_ids, mesh, PS(("dp", "fsdp"), None))
-            target_attention_mask = with_named_sharding_constraint(target_attention_mask, mesh, PS(("dp", "fsdp"), None))
-            target_position_ids = with_named_sharding_constraint(target_position_ids, mesh, PS(("dp", "fsdp"), None))
-
-            # define loss function
-            loss, info = loss_fn(
-                model, 
-                params, 
-                input_ids, 
-                input_attention_mask, 
-                input_position_ids, 
-                target_ids, 
-                target_attention_mask, 
-                target_position_ids, 
-                prng_key, 
-                train, 
-            )
-            return loss, info
-        
-        return cls(
-            params=params, 
-            model=model, 
-            tokenizer=tokenizer, 
-            _generate=_generate, 
-            _forward=_forward, 
-            _eval_loss=None if loss_fn is None else _eval_loss, 
-        )
-
-class GPT2InferenceMask(InferenceMask):
-    @classmethod
-    def load_inference(
-        cls, 
-        params: PyTree, 
-        model: FlaxPreTrainedModel, 
-        tokenizer: PreTrainedTokenizerBase, 
-        loss_fn: Optional[Callable]=loss_fn_mask, 
-        dp_shard_logits: bool=True, 
-    ) -> GPT2InferenceMask:
-        mesh = model.config.mesh
-        assert mesh is not None
-        temp_inference = GPT2Inference.load_inference(params, model, tokenizer, loss_fn=None, dp_shard_logits=dp_shard_logits)
-        params_partition_spec = match_partition_rules(model.config.get_partition_rules(), params)
-
-        @partial(
-            pjit, 
-            static_argnames=('train',), 
-            in_shardings=(
-                jax.tree_util.tree_map(lambda ps: NamedSharding(mesh, ps), params_partition_spec), 
-                NamedSharding(mesh, PS()), 
-                NamedSharding(mesh, PS()), 
-                NamedSharding(mesh, PS()), 
-                NamedSharding(mesh, PS()), 
-                NamedSharding(mesh, PS()), 
-            ), 
-            out_shardings=(
-                NamedSharding(mesh, PS()), 
-                NamedSharding(mesh, PS()), 
-            ), 
-        )
-        def _eval_loss(
-            params: PyTree, 
-            input_ids: jax.Array, 
-            input_attention_mask: jax.Array, 
-            input_position_ids: jax.Array, 
-            input_training_mask: jax.Array, 
+            input_training_mask: jax.Array,
+            rewards: jax.Array,
+            gammas: jax.Array,
             prng_key: Optional[jax.random.PRNGKeyArray], 
             train: bool=False, 
         ) -> Tuple[jax.Array, PyTree]:
@@ -478,22 +301,30 @@ class GPT2InferenceMask(InferenceMask):
             input_attention_mask = with_named_sharding_constraint(input_attention_mask, mesh, PS(("dp", "fsdp"), None))
             input_position_ids = with_named_sharding_constraint(input_position_ids, mesh, PS(("dp", "fsdp"), None))
             input_training_mask = with_named_sharding_constraint(input_training_mask, mesh, PS(("dp", "fsdp"), None))
+            rewards = with_named_sharding_constraint(rewards, mesh, PS(('dp', 'fsdp'), None))
+            gammas = with_named_sharding_constraint(gammas, mesh, PS(('dp', 'fsdp'), None))
 
             # define loss function
             loss, info = loss_fn(
                 model, 
-                params, 
+                params,
+                target_params,
+                pi_beta_params,
                 input_ids, 
                 input_attention_mask, 
                 input_position_ids, 
-                input_training_mask, 
+                input_training_mask,
+                rewards,
+                gammas,
                 prng_key, 
                 train, 
             )
             return loss, info
         
         return cls(
-            params=params, 
+            params=params,
+            target_params=target_params,
+            pi_beta_params=pi_beta_params,
             model=model, 
             tokenizer=tokenizer, 
             _generate=temp_inference._generate, 
