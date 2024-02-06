@@ -105,9 +105,11 @@ def main(
     polyak_alpha: float=0.005, 
     hard_update_every: Optional[int]=None, 
 
-    gamma: float=0.99, 
+    gamma: float=1.0, 
     tau: float=0.7, 
-    cql_weight: float=0.01, 
+    cql_weight: float=0.01,
+
+    sparse_rewards: bool=True,
 ):
     input_args = locals()
     print(input_args)
@@ -121,10 +123,18 @@ def main(
     print(f"Is main process: {is_main_process}")
 
     def map_data_item(item):
+        if sparse_rewards:
+            # Convert to a sparse reward
+            incorrect = sum(item['reward'])
+            reward = [0.0] * len(item['reward'])
+            reward[-2] = 1.0 - incorrect / 6.0
+        else:
+            reward = item['reward']
+
         text_trajectory_chain = TextTrajectoryChain(
             text_trajectory=TextTrajectory(
                 text_history=[Text(text, bool(is_action)) for text, is_action in item['sequence']], 
-                reward=[0.0]+item['reward'], 
+                reward=[0.0]+reward, 
                 done=item['done'], 
             ), 
             next=None, 
