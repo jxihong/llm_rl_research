@@ -249,7 +249,7 @@ class GPT2ILQLTrain(ILQLTrain):
                     should_take_action.astype(jnp.int32) * jnp.arange(0, should_take_action.shape[1])[None, ...] +
                     jnp.flip(should_take_action, axis=1).astype(jnp.int32) * should_take_action.shape[1]
                 )
-                next_action_idxs = jax.lax.cummin(masked_idxs[:, ::-1], axis=-1)[:, ::-1]
+                next_action_idxs = jax.lax.cummin(masked_idxs[:, ::-1], axis=1)[:, ::-1]
                 next_action_idxs = jnp.minimum(next_action_idxs, should_take_action.shape[1] - 1)
                 v_target = jnp.take_along_axis(v_target, next_action_idxs, axis=1)
 

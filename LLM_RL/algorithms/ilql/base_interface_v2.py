@@ -51,6 +51,7 @@ def ilql_loss(
     q1sa_flat, q2sa_flat, v_flat = q1.reshape(-1), q2.reshape(-1), v.reshape(-1)
     target_q1sa_flat, target_q2sa_flat = target_q1.reshape(-1), target_q2.reshape(-1)
     # vns_flat = jnp.concatenate((v, v_final[..., None]), axis=1).reshape(-1)
+    # shift over v by 1 before concatenating to v_final
     vns_flat = jnp.concatenate((v[:, 1:], v_final[..., None]), axis=1).reshape(-1) 
 
     qv_query_indicators = get_query_indicators(should_take_action.reshape(-1))

@@ -10,12 +10,12 @@ import os
 import optax
 from JaxSeq.models.gpt2.load import load_train_state, ModelLoadMode
 import pickle as pkl
-from LLM_RL.algorithms.ilql.base_interface import ilql_loss
+from LLM_RL.algorithms.ilql.base_interface_v2 import ilql_loss
 from transformers.generation import GenerationConfig
 from jaxtyping import PyTree
 import re
 from LLM_RL.environment import Text, text_env_eval, TextTrajectory, TextTrajectoryChain, TokenTrajectoryChain, text_history_to_str
-from LLM_RL.algorithms.ilql.gpt2.interface import GPT2ILQLInference, GPT2ILQLTrain
+from LLM_RL.algorithms.ilql.gpt2.interface_v2 import GPT2ILQLInference, GPT2ILQLTrain
 from LLM_RL.algorithms.value_rl_base.gpt2.interface import GPT2ValuePolicy, GPT2ValueRLInference
 from LLM_RL.heads.mlp_head import load_train_state_from_config as load_head_train_state_from_config
 from LLM_RL.heads.mlp_head import MLPHeadConfig
@@ -125,7 +125,7 @@ def main(
     def map_data_item(item):
         if sparse_rewards:
             # Convert to a sparse reward
-            incorrect = abs(sum(item['reward']))
+            incorrect = sum(item['reward'])
             reward = [0.0] * len(item['reward'])
             reward[-2] = 1.0 - incorrect / 6.0
         else:
