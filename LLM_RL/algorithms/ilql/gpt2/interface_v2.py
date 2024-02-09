@@ -1,6 +1,7 @@
 from typing import Optional, Callable, Tuple
 from jax.experimental.pjit import pjit
-from LLM_RL.algorithms.ilql.base_interface_v2 import ILQLTrain, ILQLInference
+from LLM_RL.algorithms.ilql.base_interface_v2 import ILQLTrain
+from LLM_RL.algorithms.ilql.base_interface import ILQLInference
 from flax.training.train_state import TrainState
 from jaxtyping import PyTree
 from transformers.modeling_flax_utils import FlaxPreTrainedModel
@@ -15,6 +16,7 @@ import jax.numpy as jnp
 import optax
 from LLM_RL.algorithms.value_rl_base.gpt2.interface import GPT2ValueRLInference
 from IPython import embed
+
 
 class GPT2ILQLTrain(ILQLTrain):
     @classmethod
@@ -281,7 +283,7 @@ class GPT2ILQLTrain(ILQLTrain):
                     final_state_idxs = ((1 - dones) * last_action_idxs + dones * last_token_idxs).astype(jnp.int32)
                     v_final = v_target[jnp.arange(0, should_take_action.shape[0], dtype=jnp.int32), final_state_idxs]
                     v_final = v_final * (1 - dones)
-                v_target.at[jnp.arange(0, should_take_action.shape[0]), final_state_idxs:].set(v_final)
+                # v_target.at[jnp.arange(0, should_take_action.shape[0]), final_state_idxs:].set(v_final)
 
                 loss, info = loss_fn(
                     q1, 
@@ -392,7 +394,7 @@ class GPT2ILQLTrain(ILQLTrain):
             _step=_step, 
         )
 
-class GPT2ILQLInference(ILQLInference):
+class GPT2ILQLInferenceV2(ILQLInference):
     @classmethod
     def load_inference(
         cls, 
@@ -594,7 +596,7 @@ class GPT2ILQLInference(ILQLInference):
                 should_take_action.astype(jnp.int32) * jnp.arange(0, should_take_action.shape[1])[None, ...] +
                 jnp.flip(should_take_action, axis=1).astype(jnp.int32) * should_take_action.shape[1]
             )
-            next_action_idxs = jax.lax.cummin(masked_idxs[:, ::-1], axis=-1)[:, ::-1]
+            next_action_idxs = jax.lax.cummin(masked_idxs[:, ::-1], axis=1)[:, ::-1]
             next_action_idxs = jnp.minimum(next_action_idxs, should_take_action.shape[1] - 1)
             v_target = jnp.take_along_axis(v_target, next_action_idxs, axis=1)
 
@@ -626,7 +628,7 @@ class GPT2ILQLInference(ILQLInference):
                 final_state_idxs = ((1 - dones) * last_action_idxs + dones * last_token_idxs).astype(jnp.int32)
                 v_final = v_target[jnp.arange(0, should_take_action.shape[0], dtype=jnp.int32), final_state_idxs]
                 v_final = v_final * (1 - dones)
-            v_target.at[jnp.arange(0, should_take_action.shape[0]), final_state_idxs:].set(v_final)
+            # v_target.at[jnp.arange(0, should_take_action.shape[0]), final_state_idxs:].set(v_final)
 
             loss, info = loss_fn(
                 q1, 

@@ -15,7 +15,7 @@ from transformers.generation import GenerationConfig
 from jaxtyping import PyTree
 import re
 from LLM_RL.environment import Text, text_env_eval, TextTrajectory, TextTrajectoryChain, TokenTrajectoryChain, text_history_to_str
-from LLM_RL.algorithms.ilql.gpt2.interface_v2 import GPT2ILQLInference, GPT2ILQLTrain
+from LLM_RL.algorithms.ilql.gpt2.interface_v2 import GPT2ILQLInferenceV2, GPT2ILQLTrain
 from LLM_RL.algorithms.value_rl_base.gpt2.interface import GPT2ValuePolicy, GPT2ValueRLInference
 from LLM_RL.heads.mlp_head import load_train_state_from_config as load_head_train_state_from_config
 from LLM_RL.heads.mlp_head import MLPHeadConfig
@@ -341,7 +341,7 @@ def main(
         hard_update_every=hard_update_every, 
     )
 
-    inference = GPT2ILQLInference.load_inference(
+    inference = GPT2ILQLInferenceV2.load_inference(
         value_inference=GPT2ValueRLInference.load_inference(
             pi_beta_params=pi_beta_params, 
             base_params=base_train_state.params, 
@@ -390,7 +390,7 @@ def main(
     )
 
     policy_prng = jax.random.PRNGKey(0)
-    def evaluate(inference: GPT2ILQLInference):
+    def evaluate(inference: GPT2ILQLInferenceV2):
         nonlocal policy_prng
         print("Evaluating...")
         policy_prng, new_key = jax.random.split(policy_prng)

@@ -15,7 +15,8 @@ from transformers.generation import GenerationConfig
 from jaxtyping import PyTree
 import re
 from LLM_RL.environment import Text, text_env_eval, TextTrajectory, TextTrajectoryChain, TokenTrajectoryChain, text_history_to_str
-from LLM_RL.algorithms.ilql.gpt2.interface_v2 import GPT2ILQLInference, GPT2ILQLTrain
+from LLM_RL.algorithms.ilql.gpt2.interface_v2 import GPT2ILQLInferenceV2, GPT2ILQLTrain
+from LLM_RL.algorithms.ilql.gpt2.interface import ILQLInference
 from LLM_RL.algorithms.value_rl_base.gpt2.interface import GPT2ValuePolicy, GPT2ValueRLInference
 from LLM_RL.heads.mlp_head import load_train_state_from_config as load_head_train_state_from_config
 from LLM_RL.heads.mlp_head import MLPHeadConfig
@@ -29,6 +30,7 @@ from JaxSeq.utils import multihost_device_get
 from llm_rl_scripts.wordle.env.env import ReformatWordleEnvironment, WordleEnvironment
 from llm_rl_scripts.wordle.env.game import Vocabulary
 from jax.sharding import PartitionSpec as PS
+# from IPython import embed
 
 def main(
     model_load_mode: ModelLoadMode, 
@@ -341,7 +343,7 @@ def main(
         hard_update_every=hard_update_every, 
     )
 
-    inference = GPT2ILQLInference.load_inference(
+    inference = GPT2ILQLInferenceV2.load_inference(
         value_inference=GPT2ValueRLInference.load_inference(
             pi_beta_params=pi_beta_params, 
             base_params=base_train_state.params, 
@@ -374,6 +376,10 @@ def main(
         loss_fn=loss_fn, 
         use_target_base_for_loss=False,
     )
+
+    # print(type(inference))
+    # print(isinstance(inference, ILQLInference))
+    # embed()
     
     vocab = Vocabulary.from_file(
         vocab_file=vocab_file, 
@@ -390,7 +396,7 @@ def main(
     )
 
     policy_prng = jax.random.PRNGKey(0)
-    def evaluate(inference: GPT2ILQLInference):
+    def evaluate(inference: GPT2ILQLInferenceV2):
         nonlocal policy_prng
         print("Evaluating...")
         policy_prng, new_key = jax.random.split(policy_prng)

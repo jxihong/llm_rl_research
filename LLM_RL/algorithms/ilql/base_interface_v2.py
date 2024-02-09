@@ -16,6 +16,7 @@ from JaxSeq.utils import BlockingStrategy, Padding, Truncation
 from transformers.generation import FlaxBeamSearchOutput, FlaxGreedySearchOutput, FlaxSampleOutput
 from JaxSeq.models.base_interface import GenerationFromStrOutput
 from LLM_RL.algorithms.value_rl_base.base_interface import ValueRLForwardOutput, ValueRLInference
+# from LLM_RL.algorithms.ilql.base_interface import ILQLInference
 
 # loss function
 
