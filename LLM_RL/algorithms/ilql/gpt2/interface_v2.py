@@ -1,7 +1,7 @@
 from typing import Optional, Callable, Tuple
 from jax.experimental.pjit import pjit
-from LLM_RL.algorithms.ilql.base_interface_v2 import ILQLTrain
-from LLM_RL.algorithms.ilql.base_interface import ILQLInference
+from LLM_RL.algorithms.ilql.base_interface_v2 import ILQLTrain, ILQLInference
+# from LLM_RL.algorithms.ilql.base_interface import ILQLInference
 from flax.training.train_state import TrainState
 from jaxtyping import PyTree
 from transformers.modeling_flax_utils import FlaxPreTrainedModel
@@ -643,7 +643,8 @@ class GPT2ILQLInferenceV2(ILQLInference):
                 attention_mask[:, 1:], 
                 should_take_action, 
                 rewards, 
-            )                
+            )
+            return loss, info                
 
         return cls(
             value_inference=value_inference, 

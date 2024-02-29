@@ -16,7 +16,6 @@ from jaxtyping import PyTree
 import re
 from LLM_RL.environment import Text, text_env_eval, TextTrajectory, TextTrajectoryChain, TokenTrajectoryChain, text_history_to_str
 from LLM_RL.algorithms.ilql.gpt2.interface_v2 import GPT2ILQLInferenceV2, GPT2ILQLTrain
-from LLM_RL.algorithms.ilql.gpt2.interface import ILQLInference
 from LLM_RL.algorithms.value_rl_base.gpt2.interface import GPT2ValuePolicy, GPT2ValueRLInference
 from LLM_RL.heads.mlp_head import load_train_state_from_config as load_head_train_state_from_config
 from LLM_RL.heads.mlp_head import MLPHeadConfig
@@ -30,7 +29,7 @@ from JaxSeq.utils import multihost_device_get
 from llm_rl_scripts.wordle.env.env import ReformatWordleEnvironment, WordleEnvironment
 from llm_rl_scripts.wordle.env.game import Vocabulary
 from jax.sharding import PartitionSpec as PS
-# from IPython import embed
+from IPython import embed
 
 def main(
     model_load_mode: ModelLoadMode, 
@@ -113,8 +112,8 @@ def main(
 
     sparse_rewards: bool=True,
 ):
-    input_args = locals()
-    print(input_args)
+    input_args = dict(locals())
+    
 
     tokenizer = AutoTokenizer.from_pretrained('gpt2')
     tokenizer.add_special_tokens({'pad_token': '<|pad|>'})
@@ -377,10 +376,6 @@ def main(
         use_target_base_for_loss=False,
     )
 
-    # print(type(inference))
-    # print(isinstance(inference, ILQLInference))
-    # embed()
-    
     vocab = Vocabulary.from_file(
         vocab_file=vocab_file, 
         fill_cache=False, 

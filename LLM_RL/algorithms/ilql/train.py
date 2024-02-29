@@ -17,10 +17,11 @@ from JaxSeq.shard_model import get_sharding_from_model
 from flax.training.train_state import TrainState
 from transformers.modeling_flax_utils import FlaxPreTrainedModel
 import pickle as pkl
-from LLM_RL.algorithms.ilql.base_interface import ILQLTrain, ILQLInference
+from LLM_RL.algorithms.ilql.base_interface_v2 import ILQLTrain, ILQLInference
 from LLM_RL.algorithms.value_rl_base.base_interface import ValueRLInference
 import jax.numpy as jnp
 import flax.linen as nn
+from IPython import embed
 
 def dump_state(
     base_model: FlaxPreTrainedModel, 
@@ -296,6 +297,7 @@ def train_loop(
     
     def _inference_update():
         nonlocal inference
+        embed()
         if isinstance(inference, ValueRLInference):
             inference = inference.replace(
                 base_params=trainer.base_train_state.params, 
