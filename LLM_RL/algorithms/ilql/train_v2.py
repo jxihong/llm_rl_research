@@ -17,6 +17,7 @@ from JaxSeq.shard_model import get_sharding_from_model
 from flax.training.train_state import TrainState
 from transformers.modeling_flax_utils import FlaxPreTrainedModel
 import pickle as pkl
+from LLM_RL.algorithms.ilql.base_interface_v2 import ILQLTrainV2, ILQLInferenceV2
 from LLM_RL.algorithms.ilql.base_interface import ILQLTrain, ILQLInference
 from LLM_RL.algorithms.value_rl_base.base_interface import ValueRLInference
 import jax.numpy as jnp
@@ -177,7 +178,7 @@ def dump_state(
 
 
 def eval_loss(
-    inference: ILQLInference, 
+    inference: ILQLInferenceV2, 
     dataset: Union[Seq2SeqDataset, Seq2SeqIterableDataset], 
     prng_key: Optional[KeyArray], 
     bsize: int, 
@@ -203,8 +204,8 @@ def eval_loss(
     return eval_logs
 
 def train_loop(
-    trainer: ILQLTrain, 
-    inference: Union[ValueRLInference, ILQLInference], 
+    trainer: ILQLTrainV2, 
+    inference: Union[ValueRLInference, ILQLInferenceV2], 
     evaluator: Optional[Callable[[Inference], Tuple[float, Dict[str, Any]]]], 
     dataset: Union[Seq2SeqDataset, Seq2SeqIterableDataset], 
     prng_key: KeyArray, 
@@ -304,7 +305,7 @@ def train_loop(
                 q2_head_params=trainer.q2_head_train_state.params, 
                 v_head_params=trainer.v_head_train_state.params, 
             )
-        elif isinstance(inference, ILQLInference):
+        elif isinstance(inference, ILQLInferenceV2):
             new_value_inference = inference.value_inference.replace(
                 base_params=trainer.base_train_state.params, 
                 q1_head_params=trainer.q1_head_train_state.params, 

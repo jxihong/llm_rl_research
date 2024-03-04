@@ -110,6 +110,7 @@ def main(
     cql_weight: float=0.01,
 
     sparse_rewards: bool=True,
+    train_on_env_actions: bool=False,
 ):
     input_args = locals()
     print(input_args)
@@ -131,14 +132,24 @@ def main(
         else:
             reward = item['reward']
 
-        text_trajectory_chain = TextTrajectoryChain(
-            text_trajectory=TextTrajectory(
-                text_history=[Text(text, bool(is_action)) for text, is_action in item['sequence']], 
-                reward=[0.0]+reward, 
-                done=item['done'], 
-            ), 
-            next=None, 
-        )
+        if train_on_env_actions:
+            text_trajectory_chain = TextTrajectoryChain(
+                text_trajectory=TextTrajectory(
+                    text_history=[Text(text, True) for text, is_action in item['sequence']], 
+                    reward=[0.0]+reward, 
+                    done=item['done'], 
+                ), 
+                next=None, 
+            )
+        else:
+            text_trajectory_chain = TextTrajectoryChain(
+                text_trajectory=TextTrajectory(
+                    text_history=[Text(text, bool(is_action)) for text, is_action in item['sequence']], 
+                    reward=[0.0]+reward, 
+                    done=item['done'], 
+                ), 
+                next=None, 
+            )
         token_trajectory_chain = TokenTrajectoryChain.from_text_trajectory_chain(text_trajectory_chain, tokenizer)
         return ILQLData.from_token_trajectory_chain(token_trajectory_chain)
 

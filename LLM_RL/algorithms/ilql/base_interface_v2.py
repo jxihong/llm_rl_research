@@ -112,7 +112,7 @@ def ilql_loss(
 
     return loss, logs
 
-class ILQLTrain(struct.PyTreeNode):
+class ILQLTrainV2(struct.PyTreeNode):
     base_train_state: TrainState
     target_base_params: Optional[PyTree]
     q1_head_train_state: TrainState
@@ -166,7 +166,7 @@ class ILQLTrain(struct.PyTreeNode):
         next_tokens_attention_mask: Optional[jax.Array]=None, 
         next_tokens_position_ids: Optional[jax.Array]=None, 
         train: bool=True, 
-    ) -> Tuple[ILQLTrain, jax.Array, PyTree]:
+    ) -> Tuple[ILQLTrainV2, jax.Array, PyTree]:
         
         # handle attention mask and position ids shifting
         attention_mask, position_ids = initialize_attn_mask_pos_ids(
@@ -230,7 +230,7 @@ class ILQLForwardOutput(NamedTuple):
     output: ValueRLForwardOutput
     target_output: ValueRLForwardOutput
 
-class ILQLInference(struct.PyTreeNode):
+class ILQLInferenceV2(struct.PyTreeNode):
     value_inference: ValueRLInference
     target_value_inference: ValueRLInference
     _eval_loss: Callable = struct.field(pytree_node=False)
