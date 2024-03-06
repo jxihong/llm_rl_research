@@ -63,7 +63,7 @@ def loss_fn_mask(
         position_ids=input_position_ids, 
         params=pi_beta_params, 
         dropout_rng=new_key, 
-        train=False, 
+        train=train, 
     )
 
     logits = model_output.logits[:, :-1, :].astype(jnp.float32)

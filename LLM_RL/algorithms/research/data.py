@@ -7,13 +7,10 @@ import jax
 from transformers.tokenization_utils import PreTrainedTokenizerBase
 from LLM_RL.environment import TokenTrajectoryChain
 
-class ILQLData(NamedTuple):
+class RLData(NamedTuple):
     input_ids: np.ndarray # [t]
     should_take_action: np.ndarray # [t-1]
     rewards: np.ndarray # [t-1]
-    done: np.ndarray # []
-    next_token_ids: Optional[np.ndarray] # [t']
-    next_done: Optional[np.ndarray] # []
 
     @staticmethod
     def block(
@@ -44,14 +41,6 @@ class ILQLData(NamedTuple):
                 dtype=np.float32, 
                 blocking_strategy=blocking_strategy._replace(max_length=blocking_strategy.max_length-1), 
             ), 
-            dones=np.asarray(list(map(lambda x: x.done, data)), dtype=np.bool_), 
-            next_token_ids=block_sequences(
-                list(map(lambda x: x.next_token_ids, data)), 
-                tokenizer.pad_token_id, 
-                dtype=np.int32, 
-                blocking_strategy=blocking_strategy, 
-            ) if has_next_token else None, 
-            next_dones=np.asarray(list(map(lambda x: x.next_done, data)), dtype=np.bool_) if has_next_token else None, 
         )
     
     @classmethod
@@ -79,7 +68,7 @@ class ILQLData(NamedTuple):
         )
 
 
-class ILQLDataset(Dataset):
+class RLDataset(Dataset):
     def __init__(
         self, 
         input_ids: np.ndarray, # [b, t]
@@ -133,7 +122,7 @@ class ILQLDataset(Dataset):
         return cls(**data)
 
 
-class _ILQLIteratorDataset:
+class _RLIteratorDataset:
     def __init__(self, ilql_data: Iterator[Dict[str, np.ndarray]]):
         self.ilql_data = ilql_data
 
@@ -148,7 +137,7 @@ class _ILQLIteratorDataset:
             'next_dones': jnp.asarray(item['next_dones'], dtype=jnp.float32) if item['next_dones'] is not None else None, 
         }
 
-class ILQLIterableDataset(IterableDataset):
+class RLIterableDataset(IterableDataset):
     def __init__(self, ilql_data: Iterable[Dict[str, np.ndarray]]):
         self.ilql_data = ilql_data
     
