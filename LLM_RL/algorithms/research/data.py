@@ -14,7 +14,7 @@ class RLData(NamedTuple):
 
     @staticmethod
     def block(
-        data: List[ILQLData], 
+        data: List[RLData], 
         blocking_strategy: BlockingStrategy, 
         tokenizer: PreTrainedTokenizerBase, 
     ) -> Dict[str, np.ndarray]:

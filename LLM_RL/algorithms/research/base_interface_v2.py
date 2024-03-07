@@ -34,6 +34,8 @@ def loss_fn_mask(
     prng_key: jax.random.PRNGKeyArray, 
     train: bool, 
 ) -> Tuple[jax.Array, PyTree]:
+    
+    # current policy 
     model_output = model(
         input_ids=input_ids, 
         attention_mask=input_attention_mask, 
@@ -56,6 +58,7 @@ def loss_fn_mask(
     else:
         target_model_output = model_output
 
+    # behavior policy outputs 
     prng_key, new_key = jax.random.split(prng_key)
     pi_beta_model_output = model(
         input_ids=input_ids, 
@@ -69,25 +72,16 @@ def loss_fn_mask(
     logits = model_output.logits[:, :-1, :].astype(jnp.float32)
     pi_beta_logits = pi_beta_model_output.logits[:, :-1, :].astype(jnp.float32)
     target_logits = target_model_output.logits[:, 1:, :].astype(jnp.float32)
-    target_pi_beta_logits = pi_beta_model_output.logits[:, 1:, :].astype(jnp.float32)
+    # target_pi_beta_logits = pi_beta_model_output.logits[:, 1:, :].astype(jnp.float32)
 
     # Compute bellman target values
     target_ids = input_ids[:, 1:]
     targets = jax.lax.stop_gradient(
         rewards[:, :-1] + gammas[:, :-1] *
         jnp.max(
-            (jax.nn.softmax(pi_beta_logits) > 1e-4).astype(jnp.float32) *  # Clipping based on pi_beta
+            (jax.nn.softmax(pi_beta_logits) > 1e-4).astype(jnp.float32) *  # Clipping based on pi_beta probabilities
             jnp.exp(jax.nn.log_softmax(target_logits) - jax.nn.log_softmax(pi_beta_logits)), axis=-1)
     )
-    # Skip over target values computed over environment steps
-    should_take_action = input_training_mask[:, 1:]
-    masked_idxs = (
-        should_take_action.astype(jnp.int32) * jnp.arange(0, should_take_action.shape[1])[None, ...] +
-        jnp.flip(should_take_action, axis=1).astype(jnp.int32) * should_take_action.shape[1]
-    )
-    next_action_idxs = jax.lax.cummin(masked_idxs[:, ::-1], axis=-1)[:, ::-1]
-    next_action_idxs = jnp.minimum(next_action_idxs, should_take_action.shape[1] - 1)
-    targets = jnp.take_along_axis(targets, next_action_idxs, axis=1)
 
     # Compute smooth distribution
     vocab_size = logits.shape[-1]
@@ -98,9 +92,10 @@ def loss_fn_mask(
         (1 - targets[..., None]) / (vocab_size - 1) * (jnp.ones_like(logits) - target_ids_one_hot)
     )
     
-    mask = input_attention_mask[:, 1:] * input_training_mask[:, 1:]
+    mask = input_attention_mask[:, 1:]
     q_loss = softmax_cross_entropy(logits, target_distribution) * mask
     bc_loss = softmax_cross_entropy_with_integer_labels(pi_beta_logits, target_ids) * mask
+    # q_bc_loss = softmax_cross_entropy(logits, target_ids) * mask
     loss = (q_loss + bc_loss).sum() / mask.sum()
 
     return loss, {'loss': loss}
