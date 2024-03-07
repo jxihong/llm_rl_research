@@ -122,20 +122,25 @@ def main(
 
     def map_data_item(item):
         # Convert to a sparse reward
-        reward = [r + 1.0 for r in item['reward']]
+        reward = []
+        for i in enumerate(reward):
+            if item['sequence'][i][1]:
+                reward.append(r + 1.0)
+            else:
+                reward.append(0.0)
 
         text_trajectory_chain = TextTrajectoryChain(
             text_trajectory=TextTrajectory(
                 text_history=[Text(text, bool(is_action)) for text, is_action in item['sequence']], 
                 reward=[0.0]+reward, 
-                done=item['done'], 
+                done=item['done'],
             ), 
             next=None, 
         )
         token_trajectory_chain = TokenTrajectoryChain.from_text_trajectory_chain(text_trajectory_chain, tokenizer)
         return RLData.from_token_trajectory_chain(token_trajectory_chain, gamma)
 
-    train_dataset = RLIterableDataset.from_ilql_data_iterable(
+    train_dataset = RLIterableDataset.from_rl_data_iterable(
         MapIterable(map_data_item, FileOpenIterable(convert_path(train_data_path), 'r', pipe=jsonl_stream)), 
         tokenizer, 
         BlockingStrategy(
@@ -145,7 +150,7 @@ def main(
         ), 
     )
 
-    eval_dataset = RLIterableDataset.from_ilql_data_iterable(
+    eval_dataset = RLIterableDataset.from_rl_data_iterable(
         MapIterable(map_data_item, FileOpenIterable(convert_path(eval_data_path), 'r', pipe=jsonl_stream)), 
         tokenizer, 
         BlockingStrategy(
@@ -253,7 +258,7 @@ def main(
         vocab_file=vocab_file, 
         fill_cache=False, 
     )
-    env = ReformatWordleEnvironment(WordleEnvironment(vocab, require_words_in_vocab=True, bad_word_reward=-10.0))
+    env = ReformatWordleEnvironment(WordleEnvironment(vocab, require_words_in_vocab=True, bad_word_reward=0.0))
 
     save_dir, exp_name = setup_experiment_save(
         exp_name=exp_name, 
@@ -264,7 +269,7 @@ def main(
     )
 
     policy_prng = jax.random.PRNGKey(0)
-    def evaluate(inference: GPT2ILQLInferenceV2):
+    def evaluate(inference: GPT2InferenceMask):
         nonlocal policy_prng
         print("Evaluating...")
         policy_prng, new_key = jax.random.split(policy_prng)
