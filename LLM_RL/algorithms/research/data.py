@@ -9,8 +9,9 @@ from LLM_RL.environment import TokenTrajectoryChain
 
 class RLData(NamedTuple):
     input_ids: np.ndarray # [t]
-    should_take_action: np.ndarray # [t-1]
-    rewards: np.ndarray # [t-1]
+    input_training_mask: np.ndarray # [t]  whether should take action
+    rewards: np.ndarray # [t]
+    gammas: np.ndarray # [t]
 
     @staticmethod
     def block(
@@ -18,10 +19,6 @@ class RLData(NamedTuple):
         blocking_strategy: BlockingStrategy, 
         tokenizer: PreTrainedTokenizerBase, 
     ) -> Dict[str, np.ndarray]:
-        has_next_token = any(map(lambda x: x.next_token_ids is not None, data))
-        assert all(map(lambda x: x.next_token_ids is None, data)) or has_next_token
-        assert all(map(lambda x: x.next_done is None, data)) or has_next_token
-
         return dict(
             input_ids=block_sequences(
                 list(map(lambda x: x.input_ids, data)), 
@@ -29,42 +26,42 @@ class RLData(NamedTuple):
                 dtype=np.int32, 
                 blocking_strategy=blocking_strategy, 
             ), 
-            should_take_action=block_sequences(
-                list(map(lambda x: x.should_take_action, data)), 
+            input_training_mask=block_sequences(
+                list(map(lambda x: x.input_training_mask, data)), 
                 False, 
                 dtype=np.bool_, 
-                blocking_strategy=blocking_strategy._replace(max_length=blocking_strategy.max_length-1), 
+                blocking_strategy=blocking_strategy._replace(max_length=blocking_strategy.max_length), 
             ), 
             rewards=block_sequences(
                 list(map(lambda x: x.rewards, data)), 
                 0.0, 
                 dtype=np.float32, 
-                blocking_strategy=blocking_strategy._replace(max_length=blocking_strategy.max_length-1), 
+                blocking_strategy=blocking_strategy._replace(max_length=blocking_strategy.max_length), 
+            ),
+            gammas=block_sequences(
+                list(map(lambda x: x.gammas, data)), 
+                1.0, 
+                dtype=np.float32, 
+                blocking_strategy=blocking_strategy._replace(max_length=blocking_strategy.max_length), 
             ), 
+
         )
     
     @classmethod
     def from_token_trajectory_chain(
         cls, 
-        token_trajectory_chain: TokenTrajectoryChain, 
+        token_trajectory_chain: TokenTrajectoryChain,
+        gamma: float, 
     ):
-        if token_trajectory_chain.next is not None:
-            if token_trajectory_chain.next.token_trajectory.is_action[1:].sum() > 0:
-                first_next_action = np.argmax(token_trajectory_chain.next.token_trajectory.is_action[1:], axis=0)+1
-                next_token_ids = token_trajectory_chain.next.token_trajectory.tokens[:first_next_action]
-                next_done = False
-            else:
-                next_token_ids = token_trajectory_chain.next.token_trajectory.tokens
-                next_done = token_trajectory_chain.next.token_trajectory.done
-        else:
-            next_token_ids, next_done = None, None
+        gammas = gamma * np.ones_like(token_trajectory_chain.tokens, dtype=np.float32)
+        # do not discount in between utterances
+        gammas[1:][token_trajectory_chain.is_action[1:] <= token_trajectory_chain.is_action[:-1]] = 1.0
+
         return cls(
             input_ids=token_trajectory_chain.token_trajectory.tokens, 
-            should_take_action=token_trajectory_chain.token_trajectory.is_action[1:], 
-            rewards=token_trajectory_chain.token_trajectory.reward[1:], 
-            done=token_trajectory_chain.token_trajectory.done, 
-            next_token_ids=next_token_ids, 
-            next_done=next_done, 
+            input_training_mask=token_trajectory_chain.token_trajectory.is_action, 
+            rewards=token_trajectory_chain.token_trajectory.reward,
+            gammas=gammas
         )
 
 
@@ -72,38 +69,25 @@ class RLDataset(Dataset):
     def __init__(
         self, 
         input_ids: np.ndarray, # [b, t]
-        should_take_action: np.ndarray, # [b, t-1]
-        rewards: np.ndarray, # [b, t-1]
-        dones: np.ndarray, # [b]
-        next_token_ids: Optional[np.ndarray], # [b, t']
-        next_dones: Optional[np.ndarray], # [b]
+        input_training_mask: np.ndarray, # [b, t]
+        rewards: np.ndarray, # [b, t]
+        gammas: np.ndarray, #[b, t]
     ):
-        assert input_ids.shape[1] == (should_take_action.shape[1]+1)
-        assert input_ids.shape[1] == (rewards.shape[1]+1)
-
-        assert input_ids.shape[0] == should_take_action.shape[0]
-        assert input_ids.shape[0] == rewards.shape[0]
-        assert input_ids.shape[0] == dones.shape[0]
-        if next_token_ids is not None:
-            assert input_ids.shape[0] == next_token_ids.shape[0]
-        if next_dones is not None:
-            assert input_ids.shape[0] == next_dones.shape[0]
+        assert input_ids.shape == input_training_mask.shape
+        assert input_ids.shape == rewards.shape
+        assert input_ids.shape == gammas.shape
 
         self.input_ids = input_ids
-        self.should_take_action = should_take_action
+        self.input_training_mask = input_training_mask
         self.rewards = rewards
-        self.dones = dones
-        self.next_token_ids = next_token_ids
-        self.next_dones = next_dones
+        self.gammas = gammas
     
     def __getitem__(self, index):
         return {
             'input_ids': jnp.asarray(self.input_ids[index], dtype=jnp.int32), 
-            'should_take_action': jnp.asarray(self.should_take_action[index], dtype=jnp.bool_), 
-            'rewards': jnp.asarray(self.rewards[index], dtype=jnp.float32), 
-            'dones': jnp.asarray(self.dones[index], dtype=jnp.float32), 
-            'next_token_ids': jnp.asarray(self.next_token_ids[index], dtype=jnp.float32) if self.next_token_ids is not None else None, 
-            'next_dones': jnp.asarray(self.next_dones[index], dtype=jnp.float32) if self.next_dones is not None else None, 
+            'input_training_mask': jnp.asarray(self.input_training_mask[index], dtype=jnp.bool_), 
+            'rewards': jnp.asarray(self.rewards[index], dtype=jnp.float32),
+            'gammas': jnp.asarray(self.gammas[index], dtype=jnp.float32)
         }
     
     def __len__(self):
@@ -112,50 +96,48 @@ class RLDataset(Dataset):
     @classmethod
     def from_ilql_data_list(
         cls, 
-        ilql_data_list: List[ILQLData], 
+        rl_data_list: List[RLData], 
         tokenizer: PreTrainedTokenizerBase, 
         blocking_strategy: BlockingStrategy, 
-    ) -> ILQLDataset:
+    ) -> RLDataset:
         
-        data = ILQLData.block(ilql_data_list, blocking_strategy, tokenizer)
+        data = RLData.block(rl_data_list, blocking_strategy, tokenizer)
 
         return cls(**data)
 
 
 class _RLIteratorDataset:
-    def __init__(self, ilql_data: Iterator[Dict[str, np.ndarray]]):
-        self.ilql_data = ilql_data
+    def __init__(self, rl_data: Iterator[Dict[str, np.ndarray]]):
+        self.rl_data = rl_data
 
     def __next__(self):
-        item = next(self.ilql_data)
+        item = next(self.rl_data)
         return {
             'input_ids': jnp.asarray(item['input_ids'], dtype=jnp.int32), 
-            'should_take_action': jnp.asarray(item['should_take_action'], dtype=jnp.bool_), 
-            'rewards': jnp.asarray(item['rewards'], dtype=jnp.float32), 
-            'dones': jnp.asarray(item['dones'], dtype=jnp.float32), 
-            'next_token_ids': jnp.asarray(item['next_token_ids'], dtype=jnp.float32) if item['next_token_ids'] is not None else None, 
-            'next_dones': jnp.asarray(item['next_dones'], dtype=jnp.float32) if item['next_dones'] is not None else None, 
+            'input_training_mask': jnp.asarray(item['input_training_mask'], dtype=jnp.bool_), 
+            'rewards': jnp.asarray(item['rewards'], dtype=jnp.float32),
+            'gammas': jnp.asarray(item['gammas'], dtype=jnp.float32),
         }
 
 class RLIterableDataset(IterableDataset):
-    def __init__(self, ilql_data: Iterable[Dict[str, np.ndarray]]):
-        self.ilql_data = ilql_data
+    def __init__(self, rl_data: Iterable[Dict[str, np.ndarray]]):
+        self.rl_data = rl_data
     
     def __iter__(self):
-        return _ILQLIteratorDataset(iter(self.ilql_data))
+        return _RLIteratorDataset(iter(self.rl_data))
     
     @classmethod
     def from_ilql_data_iterable(
         cls, 
-        ilql_data: Iterable[ILQLData], 
+        rl_data: Iterable[RLData], 
         tokenizer: PreTrainedTokenizerBase, 
         blocking_strategy: BlockingStrategy, 
-    ) -> ILQLIterableDataset:
+    ) -> RLIterableDataset:
         
         class _TokensIterable(Iterable):
             def _tokens_generator(self):
-                for item in ilql_data:
-                    yield jax.tree_util.tree_map(lambda x: x[0], ILQLData.block([item], blocking_strategy, tokenizer))
+                for item in rl_data:
+                    yield jax.tree_util.tree_map(lambda x: x[0], RLData.block([item], blocking_strategy, tokenizer))
 
             def __iter__(self):
                 return self._tokens_generator()
