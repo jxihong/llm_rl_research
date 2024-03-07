@@ -49,8 +49,14 @@ def main(
     epochs: int=1, 
     max_steps: Optional[int]=None, 
     
-    lr: float=3e-5, 
-    weight_decay: float=0.0, 
+    weight_decay: float=0.001, 
+    init_lr: float=0.0, 
+    end_lr: float=0.002, 
+    lr: float=0.002, 
+    lr_warmup_steps: int=1000, 
+    lr_decay_steps: int=1001, # no decay, so just needs to be > warmup steps
+    bf16_momentum: bool=False, 
+    multiply_by_parameter_scale: bool=True,
 
     resid_pdrop: float=0.05, 
     attn_pdrop: float=0.05, 
@@ -102,8 +108,6 @@ def main(
     hard_update_every: Optional[int]=None, 
 
     gamma: float=1.0, 
-    tau: float=0.7, 
-    cql_weight: float=0.01,
 ):
     input_args = locals()
     print(input_args)
@@ -129,7 +133,7 @@ def main(
             next=None, 
         )
         token_trajectory_chain = TokenTrajectoryChain.from_text_trajectory_chain(text_trajectory_chain, tokenizer)
-        return RLData.from_token_trajectory_chain(token_trajectory_chain)
+        return RLData.from_token_trajectory_chain(token_trajectory_chain, gamma)
 
     train_dataset = RLIterableDataset.from_ilql_data_iterable(
         MapIterable(map_data_item, FileOpenIterable(convert_path(train_data_path), 'r', pipe=jsonl_stream)), 

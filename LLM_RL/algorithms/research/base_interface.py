@@ -74,7 +74,7 @@ def loss_fn_mask(
     # Compute bellman target values
     target_ids = input_ids[:, 1:]
     targets = jax.lax.stop_gradient(
-        rewards[:, :-1] + gamma[:, :-1] *
+        rewards[:, :-1] + gamma[:, 1:] *
         jnp.max(
             (jax.nn.softmax(pi_beta_logits) > 1e-4).astype(jnp.float32) *  # Clipping based on pi_beta
             jnp.exp(jax.nn.log_softmax(target_logits) - jax.nn.log_softmax(pi_beta_logits)), axis=-1)
