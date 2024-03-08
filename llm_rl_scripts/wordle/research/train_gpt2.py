@@ -20,7 +20,7 @@ from JaxSeq.shard_model import shard_params_from_params
 from JaxSeq.utils import multihost_device_get
 from LLM_RL.environment import Text, text_env_eval, TextTrajectory, TextTrajectoryChain, TokenTrajectoryChain, text_history_to_str
 from LLM_RL.algorithms.research.gpt2.interface import GPT2TrainMask, GPT2InferenceMask
-from functools import partial
+from LLM_RL.algorithms.ppo.gpt2.interface import GPT2PPOPolicy
 from LLM_RL.algorithms.research.train import train_loop, eval_loss
 from LLM_RL.algorithms.research.data import RLData, RLIterableDataset
 from llm_rl_scripts.wordle.env.env import ReformatWordleEnvironment, WordleEnvironment
