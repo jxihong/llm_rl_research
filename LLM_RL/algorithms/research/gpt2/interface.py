@@ -6,6 +6,7 @@ from jax.sharding import PartitionSpec as PS
 from jaxtyping import PyTree
 from functools import partial
 from typing import Optional, Union, Tuple, Callable
+import optax
 from transformers.tokenization_utils import PreTrainedTokenizerBase
 from JaxSeq.utils import with_named_sharding_constraint, match_partition_rules
 from optax import softmax_cross_entropy_with_integer_labels
@@ -13,10 +14,11 @@ from flax.training.train_state import TrainState
 from transformers.modeling_flax_outputs import FlaxCausalLMOutput, FlaxCausalLMOutputWithCrossAttentions
 from transformers.modeling_flax_utils import FlaxPreTrainedModel
 from transformers.generation import FlaxBeamSearchOutput, FlaxGreedySearchOutput, FlaxSampleOutput
-from JaxSeq.models.base_interface import Inference, Train, TrainMask, InferenceMask, loss_fn, loss_fn_mask
+from JaxSeq.models.base_interface import Inference, Train, TrainMask, InferenceMask
 from flax.core import FrozenDict
 from jax.sharding import NamedSharding
 from jax.experimental.pjit import pjit
+from LLM_RL.algorithms.research.base_interface import loss_fn_mask
 
 
 class GPT2TrainMask(TrainMask):
@@ -24,18 +26,18 @@ class GPT2TrainMask(TrainMask):
     def load_train(
         cls,
         train_state: TrainState,
-        target_params: Optional[PyTree]
+        polyak_alpha: float, 
+        target_params: Optional[PyTree],
         pi_beta_train_state: TrainState,
         model: FlaxPreTrainedModel, 
         tokenizer: PreTrainedTokenizerBase, 
         loss_fn: Callable=loss_fn_mask,
-        polyak_alpha: float, 
-        hard_update_every: Optional[int], 
+        hard_update_every: Optional[int]=10, 
     ) -> GPT2TrainMask:
         mesh = model.config.mesh
         assert mesh is not None
         train_state_partition_spec = match_partition_rules(model.config.get_partition_rules(), train_state)
-        target_params_partition_spec = PS() if target_base_params is None else match_partition_rules(model.config.get_partition_rules(), target_params)
+        target_params_partition_spec = PS() if target_params is None else match_partition_rules(model.config.get_partition_rules(), target_params)
         pi_beta_train_state_partition_spec = match_partition_rules(model.config.get_partition_rules(), pi_beta_train_state.params)
         
         @partial(
@@ -63,6 +65,7 @@ class GPT2TrainMask(TrainMask):
         def _step(
             train_state: TrainState,
             target_params: Optional[PyTree],
+            pi_beta_params: PyTree,
             pi_beta_train_state: TrainState,
             input_ids: jax.Array, 
             input_attention_mask: jax.Array, 
@@ -327,7 +330,7 @@ class GPT2InferenceMask(InferenceMask):
             pi_beta_params=pi_beta_params,
             model=model, 
             tokenizer=tokenizer, 
-            _generate=temp_inference._generate, 
-            _forward=temp_inference._forward, 
+            _generate=_generate, 
+            _forward=_forward, 
             _eval_loss=_eval_loss, 
         )

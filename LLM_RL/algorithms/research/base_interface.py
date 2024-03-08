@@ -103,7 +103,7 @@ def loss_fn_mask(
     bc_loss = softmax_cross_entropy_with_integer_labels(pi_beta_logits, target_ids) * mask
     loss = (q_loss + bc_loss).sum() / mask.sum()
 
-    return loss, {'loss': loss}
+    return loss, {'q_loss': q_loss, "bc_loss": bc_loss, 'loss': loss}
 
 
 def initialize_attn_mask_pos_ids(
@@ -261,8 +261,8 @@ class Inference(struct.PyTreeNode):
         input_position_ids: Optional[jax.Array]=None, 
         target_attention_mask: Optional[jax.Array]=None, 
         target_position_ids: Optional[jax.Array]=None,
-        rewards: jax.Array,
-        gammas: jax.Array,
+        rewards: Optional[jax.Array]=None,
+        gammas: Optional[jax.Array]=None,
         prng_key: Optional[jax.random.PRNGKeyArray]=None,
         train: bool=False, 
     ) -> Tuple[jax.Array, PyTree]:
@@ -363,8 +363,8 @@ class InferenceMask(Inference):
         input_training_mask: jax.Array, 
         input_attention_mask: Optional[jax.Array]=None, 
         input_position_ids: Optional[jax.Array]=None,
-        rewards: jax.Array,
-        gammas: jax.Array,            
+        rewards: Optional[jax.Array]=None,
+        gammas: Optional[jax.Array]=None,            
         prng_key: Optional[jax.random.PRNGKeyArray]=None, 
         train: bool=False, 
     ) -> Tuple[jax.Array, PyTree]:

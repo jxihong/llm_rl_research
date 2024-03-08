@@ -18,6 +18,7 @@ from transformers.modeling_flax_outputs import FlaxCausalLMOutput
 from transformers.generation import FlaxBeamSearchOutput, FlaxGreedySearchOutput, FlaxSampleOutput
 from flax.core import FrozenDict, freeze
 from jax.experimental.pjit import pjit
+from LLM_RL.utils import get_tensor_stats
 
 
 def loss_fn_mask(
@@ -98,7 +99,24 @@ def loss_fn_mask(
     # q_bc_loss = softmax_cross_entropy(logits, target_ids) * mask
     loss = (q_loss + bc_loss).sum() / mask.sum()
 
-    return loss, {'loss': loss}
+    mask = input_attention_mask[:, 1:]
+    n = mask.sum()
+    q_loss = softmax_cross_entropy(logits, target_distribution) * mask
+    q_loss = q_loss.sum() / n
+    bc_loss = softmax_cross_entropy_with_integer_labels(pi_beta_logits, target_ids) * mask
+    bc_loss = bc_loss.sum() / n
+    loss = q_loss + bc_loss
+
+    logs = dict(
+        losses=dict(
+            total_loss=loss,
+            q_loss=q_loss,
+            bc_loss=bc_loss
+        ),
+        targets=get_tensor_stats(targets, mask=mask, n=n),
+        rewards=get_tensor_stats(rewards, mask=mask, n=n),
+    )
+    return loss, logs
 
 
 def initialize_attn_mask_pos_ids(
@@ -256,8 +274,8 @@ class Inference(struct.PyTreeNode):
         input_position_ids: Optional[jax.Array]=None, 
         target_attention_mask: Optional[jax.Array]=None, 
         target_position_ids: Optional[jax.Array]=None,
-        rewards: jax.Array,
-        gammas: jax.Array,
+        rewards: Optional[jax.Array]=None,
+        gammas: Optional[jax.Array]=None,
         prng_key: Optional[jax.random.PRNGKeyArray]=None,
         train: bool=False, 
     ) -> Tuple[jax.Array, PyTree]:
@@ -358,8 +376,8 @@ class InferenceMask(Inference):
         input_training_mask: jax.Array, 
         input_attention_mask: Optional[jax.Array]=None, 
         input_position_ids: Optional[jax.Array]=None,
-        rewards: jax.Array,
-        gammas: jax.Array,            
+        rewards: Optional[jax.Array]=None,
+        gammas: Optional[jax.Array]=None,            
         prng_key: Optional[jax.random.PRNGKeyArray]=None, 
         train: bool=False, 
     ) -> Tuple[jax.Array, PyTree]:
