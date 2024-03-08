@@ -113,7 +113,8 @@ def loss_fn_mask(
             q_loss=q_loss,
             bc_loss=bc_loss
         ),
-        targets=get_tensor_stats(targets, mask=mask, n=n),
+        agent_targets=get_tensor_stats(targets, mask=mask * input_training_mask[:, 1:], n=n),
+        env_targets=get_tensor_stats(targets, mask=mask * jnp.invert(input_training_mask[:, 1:]), n=n),
         rewards=get_tensor_stats(rewards, mask=mask, n=n),
     )
     return loss, logs
