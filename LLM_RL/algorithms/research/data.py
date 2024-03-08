@@ -127,7 +127,7 @@ class RLIterableDataset(IterableDataset):
         return _RLIteratorDataset(iter(self.rl_data))
     
     @classmethod
-    def from_ilql_data_iterable(
+    def from_rl_data_iterable(
         cls, 
         rl_data: Iterable[RLData], 
         tokenizer: PreTrainedTokenizerBase, 

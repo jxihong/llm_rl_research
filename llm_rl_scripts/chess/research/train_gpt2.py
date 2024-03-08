@@ -131,7 +131,7 @@ def main(
         token_trajectory_chain = TokenTrajectoryChain.from_text_trajectory_chain(text_trajectory_chain, tokenizer)
         return RLData.from_token_trajectory_chain(token_trajectory_chain)
 
-    train_dataset = RLIterableDataset.from_ilql_data_iterable(
+    train_dataset = RLIterableDataset.from_rl_data_iterable(
         MapIterable(map_data_item, FileOpenIterable(convert_path(train_data_path), 'r', pipe=jsonl_stream)), 
         tokenizer, 
         BlockingStrategy(
@@ -141,7 +141,7 @@ def main(
         ), 
     )
 
-    eval_dataset = RLIterableDataset.from_ilql_data_iterable(
+    eval_dataset = RLIterableDataset.from_rl_data_iterable(
         MapIterable(map_data_item, FileOpenIterable(convert_path(eval_data_path), 'r', pipe=jsonl_stream)), 
         tokenizer, 
         BlockingStrategy(

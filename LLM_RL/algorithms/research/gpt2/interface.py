@@ -14,11 +14,10 @@ from flax.training.train_state import TrainState
 from transformers.modeling_flax_outputs import FlaxCausalLMOutput, FlaxCausalLMOutputWithCrossAttentions
 from transformers.modeling_flax_utils import FlaxPreTrainedModel
 from transformers.generation import FlaxBeamSearchOutput, FlaxGreedySearchOutput, FlaxSampleOutput
-from JaxSeq.models.base_interface import Inference, Train, TrainMask, InferenceMask
 from flax.core import FrozenDict
 from jax.sharding import NamedSharding
 from jax.experimental.pjit import pjit
-from LLM_RL.algorithms.research.base_interface import loss_fn_mask
+from LLM_RL.algorithms.research.base_interface import loss_fn_mask, TrainMask, InferenceMask
 
 
 class GPT2TrainMask(TrainMask):
@@ -170,7 +169,7 @@ class GPT2InferenceMask(InferenceMask):
         mesh = model.config.mesh
         assert mesh is not None
         params_partition_spec = match_partition_rules(model.config.get_partition_rules(), params)
-        target_params_partition_spec = PS() if target_base_params is None else match_partition_rules(model.config.get_partition_rules(), target_params)
+        target_params_partition_spec = PS() if target_params is None else match_partition_rules(model.config.get_partition_rules(), target_params)
         pi_beta_params_partition_spec = match_partition_rules(model.config.get_partition_rules(), pi_beta_params)
 
 

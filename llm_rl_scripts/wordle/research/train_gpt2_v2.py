@@ -108,6 +108,7 @@ def main(
     hard_update_every: Optional[int]=None, 
 
     gamma: float=1.0, 
+    sparse_rewards: bool=True,
 ):
     input_args = locals()
     print(input_args)
@@ -122,12 +123,13 @@ def main(
 
     def map_data_item(item):
         # Convert to a sparse reward
-        reward = []
-        for i in enumerate(reward):
-            if item['sequence'][i][1]:
-                reward.append(r + 1.0)
-            else:
-                reward.append(0.0)
+        if sparse_rewards:
+            # Convert to a sparse reward
+            incorrect = abs(sum(item['reward']))
+            reward = [0.0] * len(item['reward'])
+            reward[-2] = 1.0 - incorrect / 6.0
+        else:
+            reward = item['reward']
 
         text_trajectory_chain = TextTrajectoryChain(
             text_trajectory=TextTrajectory(
