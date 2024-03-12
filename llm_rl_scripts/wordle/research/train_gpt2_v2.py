@@ -26,6 +26,7 @@ from LLM_RL.algorithms.research.data import RLData, RLIterableDataset
 from llm_rl_scripts.wordle.env.env import ReformatWordleEnvironment, WordleEnvironment
 from llm_rl_scripts.wordle.env.game import Vocabulary
 from jax.sharding import PartitionSpec as PS
+from functools import partial
 
 def main(
     model_load_mode: ModelLoadMode, 
@@ -107,8 +108,9 @@ def main(
     polyak_alpha: float=0.005, 
     hard_update_every: Optional[int]=None, 
 
-    gamma: float=1.0, 
-    sparse_rewards: bool=True,
+    gamma: float=1.0,
+
+    use_pad_token_during_training: bool=False
 ):
     input_args = locals()
     print(input_args)
@@ -234,7 +236,10 @@ def main(
                                                           ModelLoadMode.PARAMS}):
         with open(os.path.join(convert_path(model_load_path), 'loop_state.pkl'), 'rb') as f:
             loop_state = pkl.load(f)
-    
+
+    if use_pad_token_during_training:
+        loss_fn_mask = partial(loss_fn_mask, pad_token_id=tokenizer.pad_token_id)
+
     train = GPT2TrainMask.load_train(
         train_state=train_state, 
         target_params=target_params,

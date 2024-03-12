@@ -13,6 +13,7 @@ from transformers.modeling_flax_utils import FlaxPreTrainedModel
 from transformers.tokenization_utils import PreTrainedTokenizerBase
 from JaxSeq.utils import with_named_sharding_constraint, match_partition_rules, BlockingStrategy, block_sequences, Padding, Truncation
 from optax import softmax_cross_entropy_with_integer_labels, softmax_cross_entropy
+from LLM_RL.utils import get_tensor_stats
 from flax.training.train_state import TrainState
 from transformers.modeling_flax_outputs import FlaxCausalLMOutput
 from transformers.generation import FlaxBeamSearchOutput, FlaxGreedySearchOutput, FlaxSampleOutput
@@ -32,7 +33,8 @@ def loss_fn_mask(
     rewards: jax.Array,
     gammas: jax.Array,
     prng_key: jax.random.PRNGKeyArray, 
-    train: bool, 
+    train: bool,
+    pad_token_id: Optional[int]=None
 ) -> Tuple[jax.Array, PyTree]:
     model_output = model(
         input_ids=input_ids, 
@@ -93,17 +95,37 @@ def loss_fn_mask(
     vocab_size = logits.shape[-1]
     target_ids_one_hot = jax.nn.one_hot(target_ids, num_classes=vocab_size, dtype=jnp.float32, axis=-1)
     assert target_ids_one_hot.shape == logits.shape
-    target_distribution = (
-        targets[..., None] * target_ids_one_hot +
-        (1 - targets[..., None]) / (vocab_size - 1) * (jnp.ones_like(logits) - target_ids_one_hot)
-    )
-    
-    mask = input_attention_mask[:, 1:] * input_training_mask[:, 1:]
-    q_loss = softmax_cross_entropy(logits, target_distribution) * mask
-    bc_loss = softmax_cross_entropy_with_integer_labels(pi_beta_logits, target_ids) * mask
-    loss = (q_loss + bc_loss).sum() / mask.sum()
+    # if pad_token_id is provided, put rest of weight on pad_token, else distribute evenly among rest
+    # of tokens
+    if pad_token_id is not None:
+        pad_one_hot = jnp.zeros_like(logits).at[:, :, pad_token_id].set(1)
+        target_distribution = (
+            targets[..., None] * target_ids_one_hot + (1 - targets[..., None]) * pad_one_hot
+        )
+    else:
+        target_distribution = (
+            targets[..., None] * target_ids_one_hot +
+            (1 - targets[..., None]) / (vocab_size - 1) * (jnp.ones_like(logits) - target_ids_one_hot)
+        )
 
-    return loss, {'q_loss': q_loss, "bc_loss": bc_loss, 'loss': loss}
+    mask = input_attention_mask[:, 1:] * input_training_mask[:, 1:]
+    n = mask.sum()
+    q_loss = softmax_cross_entropy(logits, target_distribution) * mask
+    q_loss = q_loss.sum() / n
+    bc_loss = softmax_cross_entropy_with_integer_labels(pi_beta_logits, target_ids) * mask
+    bc_loss = bc_loss.sum() / n
+    loss = q_loss + bc_loss
+
+    logs = dict(
+        losses=dict(
+            total_loss=loss, 
+            q_loss=q_loss,
+            bc_loss=bc_loss
+        ),
+        targets=get_tensor_stats(targets, mask=mask, n=n), 
+        rewards=get_tensor_stats(rewards, mask=mask, n=n), 
+    )
+    return loss, logs
 
 
 def initialize_attn_mask_pos_ids(
